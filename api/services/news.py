@@ -21,7 +21,10 @@ def _get_news_api_key() -> Optional[str]:
     return os.environ.get("NEWS_API_KEY") or NEWS_API_KEY
 
 
-async def fetch_news(topic: str, max_articles: int = 15) -> List[Dict]:
+# Fewer articles = faster summarization and slightly shorter scripts; reduces timeouts
+DEFAULT_MAX_ARTICLES = 8
+
+async def fetch_news(topic: str, max_articles: int = DEFAULT_MAX_ARTICLES) -> List[Dict]:
     """
     Fetch recent articles for the topic.
     Uses Google News RSS by default; if NEWS_API_KEY is set, uses NewsAPI first.

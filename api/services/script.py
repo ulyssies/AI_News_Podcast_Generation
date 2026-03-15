@@ -30,7 +30,7 @@ def _summarize_articles_sync(articles: List[Dict]) -> str:
     try:
         content = "\n\n".join(
             f"**{a.get('title', 'Untitled')}** ({a.get('publisher', '')})\n{a.get('snippet', '')}"
-            for a in articles[:20]
+            for a in articles[:12]
         )
         prompt = (
             "Summarize the following news items into clear, factual bullet points "

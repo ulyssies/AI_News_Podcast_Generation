@@ -1,5 +1,5 @@
 import Head from "next/head";
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useState } from "react";
 import { AudioPlayer } from "../components/AudioPlayer";
 import { TopicInputWithDiscovery } from "../components/TopicInputWithDiscovery";
 
@@ -16,8 +16,7 @@ function formatEpisodeTitle(topic: string): string {
   return `Latest on ${capped}`;
 }
 
-const LOADING_CAP = 90;
-const LOADING_INTERVAL_MS = 500;
+const FETCH_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
 export default function Home() {
   const [topic, setTopic] = useState("");
@@ -26,13 +25,6 @@ export default function Home() {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GenerateResponse | null>(null);
-  const progressInterval = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (progressInterval.current) clearInterval(progressInterval.current);
-    };
-  }, []);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -41,23 +33,17 @@ export default function Home() {
     setError(null);
     setResult(null);
 
-    progressInterval.current = setInterval(() => {
-      setProgress((p) => (p >= LOADING_CAP ? LOADING_CAP : p + 10));
-    }, LOADING_INTERVAL_MS);
-
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000);
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
       const apiBase =
         typeof window !== "undefined"
           ? process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
           : "";
-      const url = apiBase ? `${apiBase}/generate` : "/api/generate";
+      const url = apiBase ? `${apiBase}/generate/stream` : "/api/generate/stream";
       const res = await fetch(url, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic, length }),
         signal: controller.signal,
       });
@@ -75,20 +61,51 @@ export default function Home() {
         throw new Error(msg);
       }
 
-      const data: GenerateResponse = await res.json();
-      setResult(data);
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No response body");
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let gotResult = false;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const data = JSON.parse(line.slice(6)) as {
+              percent?: number;
+              message?: string;
+              result?: GenerateResponse;
+              error?: string;
+            };
+            if (data.error) {
+              setError(data.error);
+              setLoading(false);
+              return;
+            }
+            if (typeof data.percent === "number") setProgress(data.percent);
+            if (data.result) {
+              setResult(data.result);
+              setProgress(100);
+              gotResult = true;
+              break;
+            }
+          } catch {
+            // ignore malformed lines
+          }
+        }
+        if (gotResult) break;
+      }
     } catch (err: any) {
       if (err?.name === "AbortError") {
-        setError("Request took too long. Try a shorter episode length.");
+        setError("Request took too long. Try a shorter episode length or check your connection.");
       } else {
         setError(err.message ?? "Something went wrong");
       }
     } finally {
-      if (progressInterval.current) {
-        clearInterval(progressInterval.current);
-        progressInterval.current = null;
-      }
-      setProgress(100);
       setLoading(false);
     }
   };

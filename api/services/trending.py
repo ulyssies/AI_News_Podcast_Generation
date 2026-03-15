@@ -35,6 +35,27 @@ STOPWORDS = frozenset(
     }
 )
 
+# Vague or non-quantifiable terms — not useful as topics for the average person
+VAGUE_TOPIC_WORDS = frozenset(
+    {
+        "updates", "recent", "latest", "breaking", "headlines", "today",
+        "week", "month", "reports", "report", "update", "coverage", "highlights",
+        "summary", "roundup", "round-up", "recap", "developing", "live",
+        "just", "right", "now", "here", "what", "how", "why", "when",
+        "more", "some", "many", "other", "things", "stories", "read",
+        "watch", "see", "full", "part", "day", "days", "time", "times",
+    }
+)
+
+# Phrases that are too generic to use as topic snippets (normalized)
+VAGUE_SNIPPET_STARTS = frozenset(
+    {
+        "latest updates", "recent updates", "breaking news", "news updates",
+        "top stories", "today's headlines", "this week", "in the news",
+        "weekly roundup", "daily briefing", "news roundup", "headlines today",
+    }
+)
+
 MAX_TOPICS = 10
 MIN_TOPIC_LENGTH = 3
 MIN_WORD_LENGTH = 4
@@ -76,20 +97,44 @@ def _clean_title_for_topic(title: str) -> str:
     return re.sub(r"\s*[-–—|]\s*[A-Za-z0-9\s]+$", "", title).strip()
 
 
+def _normalize_title_for_dedup(title: str) -> str:
+    """Normalize title for duplicate detection: lowercase, no source suffix, collapsed spaces."""
+    cleaned = _clean_title_for_topic(title)
+    normalized = re.sub(r"\s+", " ", cleaned).lower().strip()
+    return normalized
+
+
+def _is_vague_headline(title: str) -> bool:
+    """True only if the headline has no concrete topic (e.g. 'Latest updates', 'Breaking news')."""
+    cleaned = _clean_title_for_topic(title).lower()
+    words = [w for w in re.findall(r"[a-z0-9]+", cleaned) if len(w) >= 2]
+    if not words:
+        return True
+    content_words = [w for w in words if w not in STOPWORDS and w not in VAGUE_TOPIC_WORDS]
+    # Keep headline if it has at least one concrete term
+    if content_words:
+        return False
+    return True  # all vague/stop -> filter
+
+
 def _extract_words_from_titles(titles: List[str]) -> Counter:
-    """Tokenize titles and count words (min length, not stopwords)."""
+    """Tokenize titles and count words (min length, not stopwords or vague)."""
     counter: Counter = Counter()
     for title in titles:
         words = re.findall(r"[A-Za-z0-9]+", title)
         for w in words:
             lower = w.lower()
-            if len(lower) >= MIN_WORD_LENGTH and lower not in STOPWORDS:
+            if (
+                len(lower) >= MIN_WORD_LENGTH
+                and lower not in STOPWORDS
+                and lower not in VAGUE_TOPIC_WORDS
+            ):
                 counter[lower] += 1
     return counter
 
 
 def _extract_bigrams_from_titles(titles: List[str]) -> Counter:
-    """Extract adjacent word pairs (bigrams) for short 2-word topics."""
+    """Extract adjacent word pairs (bigrams) for short 2-word topics; exclude vague phrases."""
     counter: Counter = Counter()
     for title in titles:
         words = [
@@ -98,14 +143,19 @@ def _extract_bigrams_from_titles(titles: List[str]) -> Counter:
             if len(w) >= MIN_WORD_LENGTH and w.lower() not in STOPWORDS
         ]
         for i in range(len(words) - 1):
-            bigram = f"{words[i]} {words[i+1]}"
+            w1, w2 = words[i], words[i + 1]
+            if w1 in VAGUE_TOPIC_WORDS and w2 in VAGUE_TOPIC_WORDS:
+                continue
+            bigram = f"{w1} {w2}"
+            if bigram in VAGUE_SNIPPET_STARTS:
+                continue
             if len(bigram) <= MAX_TOPIC_CHARS:
                 counter[bigram] += 1
     return counter
 
 
 def _short_headline_snippet(title: str, max_words: int = MAX_TOPIC_WORDS, max_chars: int = MAX_TOPIC_CHARS) -> Optional[str]:
-    """First few words of a cleaned title, no truncation mid-word. Returns None if too long or empty."""
+    """First few words of a cleaned title; None if too long, empty, or vague."""
     cleaned = _clean_title_for_topic(title)
     words = cleaned.split()
     if not words:
@@ -114,7 +164,19 @@ def _short_headline_snippet(title: str, max_words: int = MAX_TOPIC_WORDS, max_ch
     snippet = " ".join(taken)
     if len(snippet) > max_chars:
         snippet = snippet[: max_chars + 1].rsplit(" ", 1)[0] or snippet[:max_chars]
-    return snippet.strip() if len(snippet) >= 8 else None
+    if len(snippet) < 8:
+        return None
+    snippet_lower = snippet.lower()
+    if snippet_lower in VAGUE_SNIPPET_STARTS:
+        return None
+    for vague_start in VAGUE_SNIPPET_STARTS:
+        if snippet_lower.startswith(vague_start) or snippet_lower == vague_start:
+            return None
+    # Reject if the snippet is only vague/stop words
+    snippet_words = [w.lower() for w in re.findall(r"[a-z0-9]+", snippet)]
+    if all(w in STOPWORDS or w in VAGUE_TOPIC_WORDS for w in snippet_words):
+        return None
+    return snippet.strip()
 
 
 def _rank_and_select_topics(
@@ -134,27 +196,29 @@ def _rank_and_select_topics(
 
     bigram_counts = _extract_bigrams_from_titles(section_titles)
 
-    # Single words (high volume)
-    for word, _ in word_counts.most_common(20):
+    # Single words (high volume); skip vague terms
+    for word, _ in word_counts.most_common(25):
         if len(word) < MIN_TOPIC_LENGTH:
             continue
         key = word.lower()
-        if key in seen_lower:
+        if key in VAGUE_TOPIC_WORDS or key in seen_lower:
             continue
         seen_lower.add(key)
         singles.append(word.capitalize())
 
-    # 2-word phrases (bigrams)
-    for phrase, _ in bigram_counts.most_common(15):
+    # 2-word phrases (bigrams); skip vague or generic
+    for phrase, _ in bigram_counts.most_common(20):
         if len(phrase) > MAX_TOPIC_CHARS:
             continue
         key = phrase.lower()
-        if key in seen_lower:
+        if key in VAGUE_SNIPPET_STARTS or key in seen_lower:
             continue
-        seen_lower.add(key)
         words = phrase.split()
         if len(words) != 2:
             continue
+        if words[0] in VAGUE_TOPIC_WORDS and words[1] in VAGUE_TOPIC_WORDS:
+            continue
+        seen_lower.add(key)
         bigrams.append(f"{words[0].capitalize()} {words[1].capitalize()}")
 
     # Very short headline snippets (first 3–4 words only, capped)
@@ -197,14 +261,39 @@ async def get_trending_topics(
 ) -> List[str]:
     """
     Fetch and rank trending topics from recent headlines.
-    Returns 5–10 topic strings for discovery UI.
+    Deduplicates similar headlines, filters vague/meta headlines when possible,
+    and falls back to looser filtering so we don't return empty when RSS has data.
     """
     sections = sections or DEFAULT_SECTIONS
+    seen_normalized: set = set()
     all_titles: List[str] = []
 
     for query in sections:
         titles = await _fetch_headlines_for_query(query, max_items=12)
-        all_titles.extend(titles)
+        for t in titles:
+            norm = _normalize_title_for_dedup(t)
+            if not norm or len(norm) < 10:
+                continue
+            if norm in seen_normalized:
+                continue
+            if _is_vague_headline(t):
+                continue
+            seen_normalized.add(norm)
+            all_titles.append(t)
+
+    # Fallback: if strict filtering removed everything, re-gather with only dedupe and shorter min length
+    if not all_titles:
+        seen_normalized = set()
+        for query in sections:
+            titles = await _fetch_headlines_for_query(query, max_items=12)
+            for t in titles:
+                norm = _normalize_title_for_dedup(t)
+                if not norm or len(norm) < 5:
+                    continue
+                if norm in seen_normalized:
+                    continue
+                seen_normalized.add(norm)
+                all_titles.append(t)
 
     if not all_titles:
         return []

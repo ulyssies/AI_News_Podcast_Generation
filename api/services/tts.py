@@ -7,19 +7,27 @@ Chunks long scripts to stay under the API limit (~4096 chars), then concatenates
 the audio. Returns a data URL (base64) so the frontend can play it without file storage.
 """
 
+import asyncio
 import base64
+import logging
 import os
 from typing import List, Optional
 
 from openai import OpenAI
 
-# OpenAI TTS input limit; chunk below this to be safe
-TTS_MAX_CHARS = 4000
+logger = logging.getLogger(__name__)
+
+# OpenAI TTS input limit is 4096. Smaller chunks = faster per request (~30–60s each).
+TTS_MAX_CHARS = 1200
+# Timeout per chunk; with tts-1 and ~1200 chars this is ample
+TTS_REQUEST_TIMEOUT = 90.0
 
 
 def _client() -> Optional[OpenAI]:
     key = (os.environ.get("OPENAI_API_KEY") or "").strip()
-    return OpenAI(api_key=key) if key else None
+    if not key:
+        return None
+    return OpenAI(api_key=key, timeout=TTS_REQUEST_TIMEOUT)
 
 
 def _chunk_script(script: str, max_chars: int = TTS_MAX_CHARS) -> List[str]:
@@ -51,14 +59,48 @@ def _synthesize_one_chunk_sync(text: str, voice: str) -> bytes:
     if not client or not (text or "").strip():
         return b""
     try:
+        # tts-1 is fast (~30–60s per chunk); tts-1-hd is higher quality but 3–5x slower
+        model = (os.environ.get("OPENAI_TTS_MODEL") or "tts-1").strip() or "tts-1"
         resp = client.audio.speech.create(
-            model=os.environ.get("OPENAI_TTS_MODEL", "tts-1"),
+            model=model,
             voice=voice,
             input=text.strip(),
         )
         return resp.content or b""
-    except Exception:
+    except Exception as e:
+        logger.warning("TTS chunk failed: %s", e, exc_info=True)
         return b""
+
+
+def get_chunks(script: str, max_chars: int = TTS_MAX_CHARS) -> List[str]:
+    """Return script split into TTS-sized chunks (for progress reporting)."""
+    return _chunk_script(script, max_chars)
+
+
+async def synthesize_one_chunk(chunk: str, voice: Optional[str] = None) -> bytes:
+    """Synthesize a single chunk in a thread; used by pipeline for per-chunk progress."""
+    voice = _normalize_voice(voice)
+    loop = asyncio.get_event_loop()
+    try:
+        return await asyncio.wait_for(
+            loop.run_in_executor(
+                None, lambda: _synthesize_one_chunk_sync(chunk, voice)
+            ),
+            timeout=TTS_REQUEST_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "TTS chunk timed out after %.0fs (chunk length %d chars); skipping.",
+            TTS_REQUEST_TIMEOUT,
+            len(chunk or ""),
+        )
+        return b""
+
+
+def _normalize_voice(voice: Optional[str]) -> str:
+    voice = (voice or os.environ.get("OPENAI_TTS_VOICE", "alloy")).lower()
+    allowed = ("alloy", "echo", "fable", "onyx", "shimmer", "nova")
+    return voice if voice in allowed else "alloy"
 
 
 def _synthesize_full_script_sync(script: str, voice: str) -> bytes:
@@ -90,17 +132,19 @@ async def synthesize_audio(script: str, voice: Optional[str] = None) -> str:
     synthesized in sequence, then concatenated into one audio blob.
     Returns a data URL (data:audio/mpeg;base64,...) for <audio src={audio_url} />.
     """
-    import asyncio
-
-    voice = (voice or os.environ.get("OPENAI_TTS_VOICE", "alloy")).lower()
-    allowed = ("alloy", "echo", "fable", "onyx", "shimmer", "nova")
-    if voice not in allowed:
-        voice = "alloy"
-
+    voice = _normalize_voice(voice)
     loop = asyncio.get_event_loop()
     audio_bytes = await loop.run_in_executor(
         None, lambda: _synthesize_full_script_sync(script, voice)
     )
+    if not audio_bytes:
+        return ""
+    b64 = base64.b64encode(audio_bytes).decode("ascii")
+    return f"data:audio/mpeg;base64,{b64}"
+
+
+def bytes_to_data_url(audio_bytes: bytes) -> str:
+    """Turn raw MP3 bytes into a data URL for the frontend."""
     if not audio_bytes:
         return ""
     b64 = base64.b64encode(audio_bytes).decode("ascii")

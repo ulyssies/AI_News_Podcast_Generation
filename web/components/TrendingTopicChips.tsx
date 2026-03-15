@@ -45,7 +45,7 @@ export function TrendingTopicChips({
           Trending topics
         </p>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm text-slate-400">Couldn’t load trending topics.</span>
+          <span className="text-sm text-slate-400">Couldn’t load trending topics. Start the API (uvicorn from project root) and click Retry.</span>
           {onRetry && (
             <button
               type="button"
