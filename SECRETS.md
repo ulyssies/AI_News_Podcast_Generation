@@ -16,6 +16,8 @@ This file explains how to keep API keys and other secrets **out of git** so you 
 2. Edit **`api/.env`** and add your real values, for example:
    ```bash
    OPENAI_API_KEY=sk-your-actual-key-here
+   # Optional: use Claude for the script (TTS still uses OpenAI)
+   # ANTHROPIC_API_KEY=sk-ant-api03-...
    ```
 3. Do **not** commit `api/.env`. Only `api/.env.example` (with placeholders) is in the repo.
 

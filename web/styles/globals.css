@@ -1,1 +1,13 @@
 @import "tailwindcss";
+
+@keyframes hero-wave-bar {
+  0%,
+  100% {
+    transform: scaleY(0.18);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}

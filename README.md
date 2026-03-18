@@ -1,54 +1,119 @@
-# AI News Podcast Generator
+[<div align="center">
 
-**This is a proof-of-concept (POC).** It is not production-ready. Use it to explore the idea and extend it; expect rough edges and missing features (auth, rate limits, persistence, etc.).
+# 🎙️ Curated Daily Audio
+
+**Stay informed — without the noise.**
+
+[![Status](https://img.shields.io/badge/Status-Proof%20of%20Concept-f59e0b?style=for-the-badge)](.)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![Next.js](https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org)
+[![Claude](https://img.shields.io/badge/Anthropic-Claude-c96442?style=for-the-badge)](https://anthropic.com)
+[![OpenAI](https://img.shields.io/badge/OpenAI-TTS-412991?style=for-the-badge&logo=openai&logoColor=white)](https://openai.com)
+
+> **POC notice:** This is not production-ready. Auth and persistence are out of scope.
+
+</div>
 
 ---
 
 ## What it does
 
-Turn a **topic** into a **podcast-style audio briefing**: the app fetches recent news, generates a script with OpenAI, converts it to speech with OpenAI TTS, and serves an episode with transcript and sources.
+A curated daily audio briefing app for people who want to stay informed without sitting through fluff or biased takes. Pick a category, hit play, and get a clean factual podcast-style episode — like the front page of a newspaper, read to you.
 
-### Features (POC scope)
-
-- **Topic input** – Type any topic or pick from **trending topics** (derived from recent headline volume).
-- **Episode length** – Short (~5 min), medium (~15 min), or long (~30 min) when read aloud.
-- **Audio playback** – Play/pause, progress bar, seek, waveform-style indicator; only one episode plays at a time.
-- **Transcript & sources** – Scrollable transcript and links to source articles.
-- **Caching** – Same topic + length returns the cached episode to save OpenAI usage.
-- **Trending discovery** – `GET /trending-topics` surfaces 5–10 short, mixed topic labels from recent news.
+```
+Category select → News fetch → Claude script generation → OpenAI TTS → Audio player + transcript
+```
 
 ---
 
-## Project structure
+## Features
 
-| Part | Description |
-|------|-------------|
-| **api/** | FastAPI backend: news fetch, script generation (OpenAI), TTS with chunking (OpenAI), episode cache |
-| **api/routes.py** | `POST /generate`, `GET /trending-topics` |
-| **api/services/** | `news`, `script`, `tts`, `pipeline`, `trending` |
-| **web/** | Next.js frontend (React, TypeScript, Tailwind) |
-| **web/pages/index.tsx** | Main UI: topic discovery, length, generate, player, transcript, sources |
-| **web/components/** | `AudioPlayer`, `TopicInputWithDiscovery`, `TrendingTopicChips` |
-| **SECRETS.md** | How to keep API keys out of git (use `api/.env`, never commit it) |
+| Feature | Description |
+|---|---|
+| 📰 **Today's Full Briefing** | One cohesive episode covering all 8 categories in order — the main experience |
+| 🗂️ **Category Deep Dives** | 8 curated categories, each with tailored news queries for relevant results |
+| ⏱️ **Episode length** | Short (~5 min), medium (~15 min), or long (~30 min) |
+| 🎵 **Sticky audio player** | Persistent bottom bar player — play/pause, seek, progress bar |
+| 📄 **Transcript & sources** | Full scrollable transcript and links to every source article |
+| 💾 **Caching** | Same category + length returns a cached episode to save API costs (up to 50 episodes in memory) |
+| ⚖️ **Balanced politics** | Politics category pulls from both left and right-leaning sources equally |
+| 🚦 **Rate limiting** | 5 generations per IP per 24 hours to prevent API abuse |
 
 ---
 
-## Setup
+## Categories
 
-### 1. Backend (API)
+| Category | Focus |
+|---|---|
+| 🔴 **Current Events** | Today's top stories from around the world |
+| 💹 **Financial Report** | Markets, earnings, and economic trends |
+| 🔬 **Latest in Science** | Discoveries, research, and breakthroughs |
+| 🏆 **Sports** | Scores, highlights, and headlines |
+| 🎬 **Entertainment** | Movies, music, culture, and celebrity news |
+| 💻 **Tech & AI** | The latest in technology and artificial intelligence |
+| 🩺 **Health & Wellness** | Medical news, wellness tips, and research |
+| ⚖️ **Politics** | Balanced coverage, all sides, no spin |
 
-From the **project root**:
+---
+
+## How it works
+
+1. **News fetch** — each category maps to tailored search queries via NewsAPI (or Google News RSS fallback). The Full Briefing pulls from all 8 categories and merges/deduplicates articles.
+2. **Script generation** — Anthropic's Claude generates a broadcast-style script from the fetched articles, instructed to write in a neutral, factual journalist tone with no opinion or political framing.
+3. **TTS** — OpenAI TTS converts the script to audio.
+4. **Playback** — the frontend serves a sticky audio player with transcript and source links.
+
+---
+
+## Project Structure
+
+```
+.
+├── api/
+│   ├── main.py                    # FastAPI app, rate limit error handler, CORS
+│   ├── routes.py                  # /generate, /generate/stream, /trending-topics
+│   ├── .env.example
+│   └── services/
+│       ├── news.py                # Category queries, full briefing fetch, politics balancing
+│       ├── script.py              # Claude API script generation
+│       ├── tts.py                 # OpenAI TTS
+│       ├── pipeline.py            # Orchestration, streaming support
+│       └── trending.py            # Trending topics via RSS
+├── web/
+│   ├── pages/
+│   │   └── index.tsx              # Main UI
+│   ├── components/
+│   │   ├── AudioPlayer.tsx        # Sticky bottom audio player
+│   │   └── CategoryCards.tsx      # 8 category cards grid
+│   └── lib/
+│       └── apiClient.ts
+└── SECRETS.md
+```
+
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Python 3.10+
+- Node.js 18+
+- An [OpenAI API key](https://platform.openai.com/api-keys) (for TTS)
+- An [Anthropic API key](https://console.anthropic.com/) (for script generation)
+
+### 1. Backend
 
 ```bash
 cp api/.env.example api/.env
-# Edit api/.env and set OPENAI_API_KEY=sk-...
+# Add your keys to api/.env (see Environment Variables below)
+
 pip install -r api/requirements.txt
 python3 -m uvicorn api.main:app --reload
 ```
 
-API runs at **http://localhost:8000**.
+API runs at **http://localhost:8000** · Docs at **http://localhost:8000/docs**
 
-### 2. Frontend (Web)
+### 2. Frontend
 
 ```bash
 cd web
@@ -56,41 +121,73 @@ npm install
 npm run dev
 ```
 
-Web runs at **http://localhost:3000**. In development the frontend calls the API at `http://localhost:8000` directly (see `web/lib/apiClient.ts`).
+Web runs at **http://localhost:3000** and calls the API at `http://localhost:8000` in development.
 
-### 3. Environment variables (api/.env)
+### 3. Environment Variables
 
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `OPENAI_API_KEY` | **Yes** | Script generation (summarize + draft) and TTS (audio) |
-| `NEWS_API_KEY` | No | Richer news (default: Google News RSS) |
-| `OPENAI_TTS_VOICE` | No | One of: alloy, echo, fable, onyx, shimmer, nova |
+Add these to `api/.env`. **Never commit this file** — see `SECRETS.md` and `.gitignore`.
 
-Do **not** commit `api/.env`. See **SECRETS.md** and `.gitignore`.
-
----
-
-## Flow
-
-1. User enters a topic (typed or from trending chips) and chooses short/medium/long.
-2. Backend fetches recent articles (Google News RSS, or NewsAPI if `NEWS_API_KEY` is set).
-3. OpenAI summarizes articles and writes the podcast script (with length targets).
-4. OpenAI TTS turns the script into audio (chunked for long scripts); response includes a data URL.
-5. Frontend shows the custom audio player, transcript, and source links. Same topic + length on a later request returns the cached episode.
+| Variable | Required | Description |
+|---|---|---|
+| `OPENAI_API_KEY` | **Yes** | Used for TTS audio generation |
+| `ANTHROPIC_API_KEY` | **Yes** | Used for script generation via Claude |
+| `NEWS_API_KEY` | No | Richer news sources (falls back to Google News RSS) |
+| `OPENAI_TTS_VOICE` | No | `alloy`, `echo`, `fable`, `onyx`, `shimmer`, or `nova` |
 
 ---
 
-## POC limitations
+## API Reference
 
-- No authentication or rate limiting.
-- Episode cache is in-memory (lost on restart).
-- Trending topics are derived from RSS headlines, not a dedicated trending API.
-- Audio is returned as a base64 data URL (fine for POC; for scale you’d use streaming or file storage).
-- Single-user, local/dev focus; not tuned for production deployment.
+| Method | Endpoint | Rate Limited | Description |
+|---|---|---|---|
+| `POST` | `/generate` | ✅ 5/day per IP | Generate an episode, returns full result when complete |
+| `POST` | `/generate/stream` | ❌ | Generate an episode with real-time progress via SSE |
+| `GET` | `/trending-topics` | ❌ | Returns trending topic labels from recent headlines |
+
+### Request body for `/generate` and `/generate/stream`
+
+```json
+{
+  "length": "short",
+  "briefing_mode": "full_daily",
+  "category": null
+}
+```
+
+| Field | Values | Description |
+|---|---|---|
+| `length` | `short` · `medium` · `long` | Episode length (~5 / ~15 / ~30 min) |
+| `briefing_mode` | `full_daily` · `category` | Full briefing or single category |
+| `category` | e.g. `current_events`, `financial_report` | Required when `briefing_mode` is `category` |
+
+Full interactive docs available at `http://localhost:8000/docs` when the API is running.
 
 ---
 
-## Quick reference
+## POC Limitations
 
-- **API docs:** http://localhost:8000/docs when the API is running.
-- **Secrets:** Copy `api/.env.example` to `api/.env`, add keys, never commit `.env` (see SECRETS.md).
+This is scoped for local exploration. Before any production use, you'd want to address:
+
+- **Rate limiting is IP-based** — easily bypassed, not a production-grade solution
+- **In-memory cache** — up to 50 episodes cached, lost on server restart
+- **Base64 audio** — works for POC; replace with streaming or object storage at scale
+- **Generation time** — 15–30 min episodes can take 30–60 seconds to generate
+- **Single-user, local focus** — not tuned for concurrent or production load
+- **CORS is localhost only** — update `allow_origins` in `main.py` before deploying
+
+---
+
+## Acknowledgments
+
+- [Anthropic Claude](https://anthropic.com/) — script generation
+- [OpenAI API](https://platform.openai.com/) — TTS audio generation
+- [FastAPI](https://fastapi.tiangolo.com/) — backend framework
+- [Next.js](https://nextjs.org/) — frontend framework
+- [slowapi](https://github.com/laurentS/slowapi) — rate limiting
+- [NewsAPI](https://newsapi.org/) — optional news enrichment
+
+---
+
+<div align="center">
+<sub>Proof of Concept · Not production-ready · Extend freely</sub>
+</div>]

@@ -2,16 +2,17 @@ from pathlib import Path
 import traceback
 
 from dotenv import load_dotenv
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+
+from .routes import router as api_router, limiter
 
 # Load .env from api/ so keys are found when running from project root
 load_dotenv(Path(__file__).resolve().parent / ".env")
 load_dotenv()  # Also try project root
-
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-
-from .routes import router as api_router
 
 
 def create_app() -> FastAPI:
@@ -29,6 +30,18 @@ def create_app() -> FastAPI:
             content={"detail": f"{type(exc).__name__}: {str(exc)}"},
         )
 
+    @app.exception_handler(RateLimitExceeded)
+    async def rate_limit_exceeded_handler(_request: Request, _exc: RateLimitExceeded):
+        return JSONResponse(
+            status_code=429,
+            content={
+                "detail": "Daily generation limit reached. Please try again tomorrow."
+            },
+        )
+
+    app.state.limiter = limiter  # used by SlowAPIMiddleware
+    app.add_middleware(SlowAPIMiddleware)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
@@ -42,4 +55,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-
