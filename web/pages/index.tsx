@@ -147,12 +147,12 @@ export default function Home() {
       <main
         className={`min-h-screen bg-[#050508] text-slate-100 ${dockVisible ? "pb-[5.25rem] sm:pb-[5.5rem]" : ""}`}
       >
-        <div className="max-w-6xl mx-auto px-3 sm:px-4 py-2 sm:py-3">
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
           <header className="mb-2">
             <p className="text-[8px] font-semibold uppercase tracking-[0.26em] text-slate-500 leading-none">
               Curated daily audio
             </p>
-            <h1 className="mt-0.5 text-sm sm:text-base font-semibold tracking-tight text-white leading-tight">
+            <h1 className="mt-0.5 text-sm sm:text-base lg:text-lg font-semibold tracking-tight text-white leading-tight">
               Stay informed—without the noise
             </h1>
           </header>
