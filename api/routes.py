@@ -9,8 +9,8 @@ from pydantic import BaseModel, Field, model_validator
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-from services.pipeline import generate_episode, generate_episode_stream
-from services.trending import get_trending_topics
+from api.services.pipeline import generate_episode, generate_episode_stream
+from api.services.trending import get_trending_topics
 
 logger = logging.getLogger(__name__)
 
