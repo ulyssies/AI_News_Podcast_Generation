@@ -13,7 +13,7 @@ from typing import Dict, List, Optional
 
 from openai import OpenAI
 
-from .news import FULL_BRIEFING_SECTION_ORDER, SECTION_DISPLAY_NAMES
+from news import FULL_BRIEFING_SECTION_ORDER, SECTION_DISPLAY_NAMES
 
 try:
     import anthropic

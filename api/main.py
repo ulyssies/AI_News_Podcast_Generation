@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from .routes import router as api_router, limiter
+from routes import router as api_router, limiter
 
 # Load .env from api/ so keys are found when running from project root
 load_dotenv(Path(__file__).resolve().parent / ".env")
