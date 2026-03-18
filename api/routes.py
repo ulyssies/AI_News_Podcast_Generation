@@ -3,7 +3,7 @@ import logging
 import traceback
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, model_validator
 from slowapi import Limiter
@@ -49,7 +49,7 @@ class GenerateRequest(BaseModel):
 
 @router.post("/generate")
 @limiter.limit("5/day")
-async def generate_endpoint(payload: GenerateRequest):
+async def generate_endpoint(request: Request, payload: GenerateRequest):
     key = _cache_key(payload.briefing_mode, payload.category, payload.length)
     if key in _episode_cache:
         return _episode_cache[key]
