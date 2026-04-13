@@ -1,6 +1,6 @@
 [<div align="center">
 
-# 🎙️ Curated Daily Audio
+# Curated Daily Audio
 
 **Stay informed — without the noise.**
 
@@ -30,14 +30,14 @@ Category select → News fetch → Claude script generation → OpenAI TTS → A
 
 | Feature | Description |
 |---|---|
-| 📰 **Today's Full Briefing** | One cohesive episode covering all 8 categories in order — the main experience |
-| 🗂️ **Category Deep Dives** | 8 curated categories, each with tailored news queries for relevant results |
-| ⏱️ **Episode length** | Short (~5 min), medium (~15 min), or long (~30 min) |
-| 🎵 **Sticky audio player** | Persistent bottom bar player — play/pause, seek, progress bar |
-| 📄 **Transcript & sources** | Full scrollable transcript and links to every source article |
-| 💾 **Caching** | Same category + length returns a cached episode to save API costs (up to 50 episodes in memory) |
-| ⚖️ **Balanced politics** | Politics category pulls from both left and right-leaning sources equally |
-| 🚦 **Rate limiting** | 5 generations per IP per 24 hours to prevent API abuse |
+| **Today's Full Briefing** | One cohesive episode covering all 8 categories in order — the main experience |
+| **Category Deep Dives** | 8 curated categories, each with tailored news queries for relevant results |
+| **Episode length** | Short (~5 min), medium (~15 min), or long (~30 min) |
+| **Sticky audio player** | Persistent bottom bar player — play/pause, seek, progress bar |
+| **Transcript & sources** | Full scrollable transcript and links to every source article |
+| **Caching** | Same category + length returns a cached episode to save API costs (up to 50 episodes in memory) |
+| **Balanced politics** | Politics category pulls from both left and right-leaning sources equally |
+| **Rate limiting** | 5 generations per IP per 24 hours to prevent API abuse |
 
 ---
 
@@ -45,14 +45,14 @@ Category select → News fetch → Claude script generation → OpenAI TTS → A
 
 | Category | Focus |
 |---|---|
-| 🔴 **Current Events** | Today's top stories from around the world |
-| 💹 **Financial Report** | Markets, earnings, and economic trends |
-| 🔬 **Latest in Science** | Discoveries, research, and breakthroughs |
-| 🏆 **Sports** | Scores, highlights, and headlines |
-| 🎬 **Entertainment** | Movies, music, culture, and celebrity news |
-| 💻 **Tech & AI** | The latest in technology and artificial intelligence |
-| 🩺 **Health & Wellness** | Medical news, wellness tips, and research |
-| ⚖️ **Politics** | Balanced coverage, all sides, no spin |
+| **Current Events** | Today's top stories from around the world |
+| **Financial Report** | Markets, earnings, and economic trends |
+| **Latest in Science** | Discoveries, research, and breakthroughs |
+| **Sports** | Scores, highlights, and headlines |
+| **Entertainment** | Movies, music, culture, and celebrity news |
+| **Tech & AI** | The latest in technology and artificial intelligence |
+| **Health & Wellness** | Medical news, wellness tips, and research |
+| **Politics** | Balanced coverage, all sides, no spin |
 
 ---
 
