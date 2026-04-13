@@ -34,41 +34,64 @@ export function CategoryBriefingGrid({
   loadingCategory,
 }: CategoryBriefingGridProps) {
   return (
-    <section className="mt-1.5 sm:mt-2">
-      <div className="flex items-baseline justify-between gap-2 mb-1">
-        <h2 className="text-xs font-semibold text-white tracking-tight leading-none">
-          Go deeper
-        </h2>
-        <span className="text-[9px] text-slate-500 whitespace-nowrap">~5 min each</span>
+    <section className="mt-6 sm:mt-8">
+      <div className="flex items-baseline justify-between gap-2 mb-3 sm:mb-4">
+        <h2 className="font-display font-bold text-sm text-white tracking-tight">Go deeper</h2>
+        <span className="text-[10px] text-slate-500 whitespace-nowrap">~10 min each</span>
       </div>
 
-      <div className="grid grid-cols-4 gap-2 lg:gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 lg:gap-4">
         {BRIEFING_CATEGORIES.map((cat) => {
           const busy = loading && loadingCategory === cat.key;
           const Icon = CATEGORY_ICONS[cat.iconId];
+
           return (
             <button
               key={cat.key}
               type="button"
               disabled={loading}
               onClick={() => onSelectCategory(cat.key, cat.label)}
-              className={`group flex flex-col items-start text-left rounded-md border px-2 py-2 sm:px-2.5 sm:py-2.5 lg:px-3 lg:py-3 min-h-[4.625rem] sm:min-h-[4.875rem] lg:min-h-[5.25rem] transition-all duration-150 hover:brightness-[1.05] active:scale-[0.99] disabled:opacity-40 ${cat.accent}`}
+              style={{
+                background: cat.cardBg,
+                borderColor: cat.borderColor,
+              }}
+              className="group relative flex flex-col text-left rounded-xl border overflow-hidden aspect-[3/2] transition-all duration-200 hover:scale-[1.025] hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
             >
-              <Icon
-                className={`h-[19px] w-[19px] lg:h-[21px] lg:w-[21px] shrink-0 ${cat.iconGlow}`}
-                strokeWidth={1.6}
-                aria-hidden
+              {/* Vignette — darkens edges for depth */}
+              <div
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  background:
+                    "radial-gradient(ellipse at 50% 0%, transparent 40%, rgba(0,0,0,0.55) 100%)",
+                }}
               />
-              <span className="mt-0.5 text-[9px] sm:text-[10px] lg:text-[11px] font-semibold text-white leading-[1.2] line-clamp-2">
-                {cat.label}
-              </span>
-              <span className="mt-0.5 text-[8px] sm:text-[9px] lg:text-[10px] text-slate-400/85 leading-[1.25] line-clamp-2">
-                {cat.description}
-              </span>
+
+              {/* Icon — upper area, large */}
+              <div className="relative flex-1 flex items-center justify-center pt-3 pb-1">
+                <Icon
+                  style={{ color: cat.iconColor }}
+                  className="h-9 w-9 sm:h-10 sm:w-10 lg:h-11 lg:w-11 shrink-0 drop-shadow-[0_0_12px_currentColor] transition-transform duration-200 group-hover:scale-110"
+                  strokeWidth={1.3}
+                  aria-hidden
+                />
+              </div>
+
+              {/* Label + description — bottom */}
+              <div className="relative px-3 pb-3 pt-0">
+                <p className="text-[11px] sm:text-xs font-semibold text-white leading-tight">
+                  {cat.label}
+                </p>
+                <p className="mt-0.5 text-[9px] sm:text-[10px] text-white/45 leading-tight line-clamp-1 hidden sm:block">
+                  {cat.description}
+                </p>
+              </div>
+
+              {/* Generating overlay */}
               {busy && (
-                <span className="mt-auto pt-0.5 text-[7px] font-medium text-slate-400/80">
-                  Generating…
-                </span>
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/40 rounded-xl backdrop-blur-[2px]">
+                  <div className="h-5 w-5 rounded-full border-2 border-white/20 border-t-white animate-spin" />
+                  <span className="text-[9px] font-medium text-white/70">Generating…</span>
+                </div>
               )}
             </button>
           );

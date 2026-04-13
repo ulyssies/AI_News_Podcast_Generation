@@ -10,6 +10,7 @@ type BriefingPlayerDockProps = {
   audioUrl: string | null;
   playerId: string;
   onPlayStateChange?: (playing: boolean) => void;
+  onTimeUpdate?: (currentTime: number, duration: number) => void;
 };
 
 export function BriefingPlayerDock({
@@ -20,6 +21,7 @@ export function BriefingPlayerDock({
   audioUrl,
   playerId,
   onPlayStateChange,
+  onTimeUpdate,
 }: BriefingPlayerDockProps) {
   if (!visible) return null;
 
@@ -29,6 +31,16 @@ export function BriefingPlayerDock({
       className="fixed inset-x-0 bottom-0 z-[100] border-t border-slate-800/90 bg-[#070709]/95 backdrop-blur-md shadow-[0_-12px_40px_rgba(0,0,0,0.45)] safe-area-pb"
       style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
     >
+      {/* Progress bar */}
+      {loading && !audioUrl && (
+        <div className="absolute inset-x-0 top-0 h-[2px] bg-slate-800/60 overflow-hidden">
+          <div
+            className="h-full bg-indigo-500 transition-all duration-300 ease-out"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      )}
+
       <div className="max-w-6xl mx-auto px-3 py-2 sm:py-2.5">
         {loading && !audioUrl ? (
           <div className="flex items-center justify-center gap-2 py-1">
@@ -50,6 +62,7 @@ export function BriefingPlayerDock({
                 aria-label="Briefing playback"
                 compact
                 onPlayStateChange={onPlayStateChange}
+                onTimeUpdate={onTimeUpdate}
                 className="rounded-lg bg-slate-900/40 border border-slate-800/80 px-2 py-1.5"
               />
             </div>

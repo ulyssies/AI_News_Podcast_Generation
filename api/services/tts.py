@@ -9,9 +9,16 @@ the audio. Returns a data URL (base64) so the frontend can play it without file 
 
 import asyncio
 import base64
+import concurrent.futures
 import logging
 import os
 from typing import List, Optional
+
+# Dedicated pool so concurrent TTS requests don't compete with other thread work.
+# One thread per chunk; 12 covers the largest realistic script (long episode ~10 chunks).
+_TTS_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=12, thread_name_prefix="tts-worker"
+)
 
 from openai import OpenAI
 
@@ -84,7 +91,7 @@ async def synthesize_one_chunk(chunk: str, voice: Optional[str] = None) -> bytes
     try:
         return await asyncio.wait_for(
             loop.run_in_executor(
-                None, lambda: _synthesize_one_chunk_sync(chunk, voice)
+                _TTS_EXECUTOR, lambda: _synthesize_one_chunk_sync(chunk, voice)
             ),
             timeout=TTS_REQUEST_TIMEOUT,
         )

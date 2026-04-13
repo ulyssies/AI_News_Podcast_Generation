@@ -1,8 +1,10 @@
 import Head from "next/head";
 import { useCallback, useEffect, useState } from "react";
+import { Info, X } from "lucide-react";
 import { BriefingPlayerDock } from "../components/BriefingPlayerDock";
 import { CategoryBriefingGrid } from "../components/CategoryBriefingGrid";
 import { DailyBriefingHero } from "../components/DailyBriefingHero";
+import { TranscriptHighlight } from "../components/TranscriptHighlight";
 
 type GenerateResponse = {
   audio_url: string;
@@ -24,9 +26,15 @@ export default function Home() {
   const [loadingCategory, setLoadingCategory] = useState<string | null>(null);
   const [playerInstanceKey, setPlayerInstanceKey] = useState(0);
   const [briefingAudioPlaying, setBriefingAudioPlaying] = useState(false);
+  const [audioTime, setAudioTime] = useState({ currentTime: 0, duration: 0 });
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [displayProgress, setDisplayProgress] = useState(0);
 
   useEffect(() => {
-    if (!result?.audio_url) setBriefingAudioPlaying(false);
+    if (!result?.audio_url) {
+      setBriefingAudioPlaying(false);
+      setAudioTime({ currentTime: 0, duration: 0 });
+    }
   }, [result?.audio_url]);
 
   useEffect(() => {
@@ -35,12 +43,41 @@ export default function Home() {
     }
   }, [loadingCategory]);
 
+  // Smooth animated progress: eases toward real milestones, creeps slowly between them.
+  useEffect(() => {
+    if (!loading) {
+      setDisplayProgress(progress === 100 ? 100 : 0);
+      return;
+    }
+    // Reset at the start of a new generation before the first milestone arrives
+    if (progress === 0) {
+      setDisplayProgress(0);
+      return;
+    }
+    const id = setInterval(() => {
+      setDisplayProgress((prev) => {
+        if (prev < progress) {
+          // Ease quickly toward the real milestone
+          return Math.min(progress, prev + Math.max(1, (progress - prev) * 0.18));
+        }
+        // Slow idle creep between milestones (~0.7%/s), never past 93
+        return prev < 93 ? prev + 0.14 : prev;
+      });
+    }, 200);
+    return () => clearInterval(id);
+  }, [loading, progress]);
+
+  const handleTimeUpdate = useCallback((currentTime: number, duration: number) => {
+    setAudioTime({ currentTime, duration });
+  }, []);
+
   const runGenerate = useCallback(
     async (mode: BriefingMode, opts: { categoryKey?: string; length: string; title: string }) => {
       setLoading(true);
       setProgress(0);
       setError(null);
       setResult(null);
+      setAudioTime({ currentTime: 0, duration: 0 });
       setEpisodeTitle(opts.title);
       setLoadingCategory(mode === "category" ? opts.categoryKey ?? null : null);
 
@@ -116,7 +153,7 @@ export default function Home() {
                 break;
               }
             } catch {
-              // ignore
+              // ignore malformed SSE lines
             }
           }
           if (gotResult) break;
@@ -145,25 +182,78 @@ export default function Home() {
         <title>Daily Briefing</title>
       </Head>
       <main
-        className={`min-h-screen bg-[#050508] text-slate-100 ${dockVisible ? "pb-[5.25rem] sm:pb-[5.5rem]" : ""}`}
+        className={`min-h-screen bg-[#050508] text-slate-100 ${dockVisible ? "pb-24 sm:pb-28" : ""}`}
       >
-        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-3 sm:py-4">
-          <header className="mb-2">
-            <p className="text-[8px] font-semibold uppercase tracking-[0.26em] text-slate-500 leading-none">
-              Curated daily audio
-            </p>
-            <h1 className="mt-0.5 text-sm sm:text-base lg:text-lg font-semibold tracking-tight text-white leading-tight">
-              Stay informed—without the noise
-            </h1>
+        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
+
+          {/* Site header */}
+          <header className="mb-4 sm:mb-6">
+            <div className="flex items-start justify-between gap-4">
+              {!aboutOpen && (
+                <div>
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-slate-600 leading-none">
+                    Curated daily audio
+                  </p>
+                  <h1 className="mt-1 font-display font-bold text-base sm:text-lg tracking-tight text-white leading-tight">
+                    Stay informed—without the noise
+                  </h1>
+                </div>
+              )}
+              {aboutOpen && <div />}
+              <button
+                type="button"
+                onClick={() => setAboutOpen((o) => !o)}
+                aria-label={aboutOpen ? "Close about" : "How it works"}
+                className="flex-shrink-0 flex items-center gap-1.5 mt-1 text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
+              >
+                {aboutOpen ? (
+                  <X className="h-3.5 w-3.5" />
+                ) : (
+                  <Info className="h-3.5 w-3.5" />
+                )}
+                <span>{aboutOpen ? "Close" : "How it works"}</span>
+              </button>
+            </div>
+
+            {aboutOpen && (
+              <div className="rounded-xl border border-slate-800/70 bg-[#08080c] px-5 py-5 text-[11px] sm:text-xs text-slate-400 leading-relaxed space-y-4">
+                <div>
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-slate-600 leading-none">
+                    Curated daily audio
+                  </p>
+                  <h1 className="mt-1 font-display font-bold text-base sm:text-lg tracking-tight text-white leading-tight">
+                    Stay informed—without the noise
+                  </h1>
+                  <p className="mt-2 text-[11px] text-slate-400 leading-relaxed">
+                    A daily news briefing delivered as a podcast-style episode — factual, neutral, and free of fluff. Pick a category or get the full picture at once.
+                  </p>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-4 sm:gap-0 pt-1 border-t border-slate-800/60">
+                  {[
+                    ["01", "News fetch", "Real articles pulled from NewsAPI and Google News RSS across 8 curated categories."],
+                    ["02", "Script generation", "Claude reads the articles and writes a broadcast-quality script — neutral tone, no spin."],
+                    ["03", "Text-to-speech", "OpenAI TTS converts the script to audio in parallel chunks for speed."],
+                    ["04", "Playback", "A sticky player serves the audio with a live transcript and source links."],
+                  ].map(([num, title, desc]) => (
+                    <div key={num} className="flex-1 sm:border-l sm:border-slate-800/60 sm:pl-4 first:pl-0 first:border-0">
+                      <p className="text-[9px] uppercase tracking-widest text-slate-600 mb-0.5">{num}</p>
+                      <p className="text-slate-300 font-medium text-[10px]">{title}</p>
+                      <p className="mt-0.5 text-slate-500 text-[10px] leading-snug">{desc}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </header>
 
+          {/* Hero */}
           <DailyBriefingHero
             length={fullLength}
             onLengthChange={setFullLength}
             onGenerate={() =>
               runGenerate("full_daily", {
                 length: fullLength,
-                title: "Today’s Full Briefing",
+                title: "Today's Full Briefing",
               })
             }
             loading={loading}
@@ -172,11 +262,12 @@ export default function Home() {
             audioPlaying={briefingAudioPlaying}
           />
 
+          {/* Category grid */}
           <CategoryBriefingGrid
             onSelectCategory={(categoryKey, label) =>
               runGenerate("category", {
                 categoryKey,
-                length: "short",
+                length: "medium",
                 title: label,
               })
             }
@@ -184,44 +275,60 @@ export default function Home() {
             loadingCategory={loadingCategory}
           />
 
+          {/* Error */}
           {error && (
-            <div className="mt-3 text-[11px] text-red-300 bg-red-950/25 border border-red-900/35 rounded-lg px-3 py-2 leading-snug">
+            <div className="mt-5 text-[11px] text-red-300 bg-red-950/25 border border-red-900/35 rounded-lg px-4 py-3 leading-snug">
               {error}
             </div>
           )}
 
+          {/* Now Playing — transcript + sources */}
           {result && (
-            <section className="mt-5 sm:mt-6 space-y-3 border-t border-slate-800/60 pt-4">
-              <div className="space-y-2">
-                <h3 className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                  Transcript
-                </h3>
-                <div className="border border-slate-800/80 rounded-lg bg-black/25 overflow-hidden">
-                  <div className="p-3 text-[11px] text-slate-300 whitespace-pre-line overflow-y-auto max-h-56 sm:max-h-64 min-h-[6rem] leading-snug">
-                    {result.transcript}
+            <section className="mt-8 sm:mt-10 space-y-6">
+              {/* Transcript panel */}
+              <div>
+                <div className="flex items-baseline justify-between mb-3">
+                  <h3 className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                    Now Playing
+                  </h3>
+                  <span className="text-[9px] text-slate-600 uppercase tracking-wider">
+                    {episodeTitle}
+                  </span>
+                </div>
+                <div className="rounded-2xl border border-slate-800/70 bg-[#08080c] overflow-hidden">
+                  <div className="px-5 py-5 sm:px-7 sm:py-6">
+                    <TranscriptHighlight
+                      transcript={result.transcript}
+                      currentTime={audioTime.currentTime}
+                      duration={audioTime.duration}
+                    />
                   </div>
                 </div>
               </div>
 
+              {/* Sources */}
               {result.sources?.length > 0 && (
-                <div className="space-y-1.5">
-                  <h3 className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <div>
+                  <h3 className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-3">
                     Sources
                   </h3>
-                  <ul className="space-y-1 text-[11px] text-slate-300 leading-snug">
+                  <ul className="space-y-2">
                     {result.sources.map((source, idx) => (
-                      <li key={idx}>
-                        <a
-                          href={source.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-sky-400/90 hover:text-sky-300 hover:underline"
-                        >
-                          {source.title}
-                        </a>
-                        {source.publisher && (
-                          <span className="text-slate-500"> · {source.publisher}</span>
-                        )}
+                      <li key={idx} className="flex items-start gap-2 text-[11px] leading-snug">
+                        <span className="text-slate-700 mt-px select-none">—</span>
+                        <span>
+                          <a
+                            href={source.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-slate-300 hover:text-white transition-colors hover:underline underline-offset-2"
+                          >
+                            {source.title}
+                          </a>
+                          {source.publisher && (
+                            <span className="text-slate-600"> · {source.publisher}</span>
+                          )}
+                        </span>
                       </li>
                     ))}
                   </ul>
@@ -231,14 +338,16 @@ export default function Home() {
           )}
         </div>
 
+        {/* Sticky player dock */}
         <BriefingPlayerDock
           visible={dockVisible}
           loading={loading}
-          progress={progress}
+          progress={Math.round(displayProgress)}
           episodeTitle={episodeTitle}
           audioUrl={audioUrl}
           playerId={`briefing-${playerInstanceKey}`}
           onPlayStateChange={setBriefingAudioPlaying}
+          onTimeUpdate={handleTimeUpdate}
         />
       </main>
     </>

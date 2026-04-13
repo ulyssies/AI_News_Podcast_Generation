@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useAudioPlayer } from "../hooks/useAudioPlayer";
 
 export interface AudioPlayerProps {
@@ -15,6 +15,7 @@ export interface AudioPlayerProps {
   /** Tighter layout for dock / chrome UI */
   compact?: boolean;
   onPlayStateChange?: (playing: boolean) => void;
+  onTimeUpdate?: (currentTime: number, duration: number) => void;
 }
 
 function formatTime(seconds: number): string {
@@ -31,6 +32,7 @@ export function AudioPlayer({
   className = "",
   compact = false,
   onPlayStateChange,
+  onTimeUpdate,
 }: AudioPlayerProps) {
   const {
     audioRef,
@@ -48,6 +50,13 @@ export function AudioPlayer({
   useEffect(() => {
     onPlayStateChange?.(playing);
   }, [playing, onPlayStateChange]);
+
+  // Use a ref so the effect only re-runs when time changes, not when parent re-renders.
+  const onTimeUpdateRef = useRef(onTimeUpdate);
+  onTimeUpdateRef.current = onTimeUpdate;
+  useEffect(() => {
+    onTimeUpdateRef.current?.(currentTime, duration);
+  }, [currentTime, duration]);
 
   const handlePlayPause = () => {
     if (playing) pause();

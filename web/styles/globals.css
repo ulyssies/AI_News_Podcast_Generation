@@ -1,9 +1,15 @@
 @import "tailwindcss";
 
+@theme {
+  --font-display: var(--font-syne), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
 html,
 body {
   background-color: #000000;
   overscroll-behavior: none;
+  font-family: var(--font-sans);
 }
 
 @keyframes hero-wave-bar {

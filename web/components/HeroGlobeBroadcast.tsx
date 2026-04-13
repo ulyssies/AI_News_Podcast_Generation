@@ -131,7 +131,7 @@ export function HeroGlobeBroadcast({ audioPlaying }: HeroGlobeBroadcastProps) {
 
   return (
     <div
-      className="absolute inset-0 w-full h-full min-h-0 overflow-hidden pointer-events-none select-none"
+      className="absolute inset-0 w-full h-full min-h-0 pointer-events-none select-none"
       aria-hidden
     >
       <div
