@@ -256,6 +256,13 @@ export default function Home() {
           </div>
         </div>
 
+        {/* ── MOBILE GLOBE — idle visual between controls and transcript ── */}
+        {!result && !loading && !error && (
+          <div className="lg:hidden relative h-[200px] my-2" id="mobile-globe-container">
+            <HeroGlobeBroadcast audioPlaying={false} variant="mobile" />
+          </div>
+        )}
+
         {/* ── RIGHT COLUMN — scrollable content + pinned player ── */}
         <div className="lg:flex-1 lg:h-full lg:flex lg:flex-col lg:overflow-hidden">
 

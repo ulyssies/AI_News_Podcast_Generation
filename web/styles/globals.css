@@ -47,14 +47,23 @@ body {
     margin-bottom: 0; /* reset Tailwind mb-4 */
   }
 
-  /* Hero + category wrappers: prevent content from overflowing their columns */
-  #mobile-hero,
-  #mobile-categories {
+  /* Hero: prevent content from overflowing its column */
+  #mobile-hero {
     min-width: 0;
     overflow: hidden;
   }
 
-  /* Category section sits in the right column — remove its default top margin */
+  /* Go Deeper: card container matching the hero card */
+  #mobile-categories {
+    min-width: 0;
+    overflow: hidden;
+    background: #111111;
+    border: 1px solid #222222;
+    border-radius: 16px; /* matches hero card rounded-2xl */
+    padding: 10px;
+  }
+
+  /* Remove the section's own top margin — the card padding handles spacing */
   #mobile-categories > section {
     margin-top: 0;
   }
@@ -81,15 +90,22 @@ body {
     gap: 8px;
   }
 
-  /* Episode-length pills: wrap so all three remain legible; tighten padding */
+  /* Episode-length pills: single row, buttons share width equally */
   #length-pills {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 4px;
   }
 
   #length-pills > button {
-    padding-left: 8px;
-    padding-right: 8px;
+    flex: 1 1 0;
+    min-width: 0;
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  /* Hide the time hint (e.g. "~5m") — label alone fits; hint causes overflow */
+  #length-pills > button > span + span {
+    display: none;
   }
 
   /* CTA button: ensure it doesn't overflow the column */

@@ -5,8 +5,9 @@ import { useEffect, useId, useRef, useState } from "react";
 type HeroGlobeBroadcastProps = {
   audioPlaying: boolean;
   /** "bleed" (default): globe positioned right, bleeds off the card edge.
-   *  "centered": globe centered within its container — used for the idle right panel. */
-  variant?: "bleed" | "centered";
+   *  "centered": globe centered within its container — used for the idle right panel.
+   *  "mobile": same centering as "centered" but constrained to 200×200px for the mobile divider. */
+  variant?: "bleed" | "centered" | "mobile";
 };
 
 const DEG = Math.PI / 180;
@@ -141,11 +142,13 @@ export function HeroGlobeBroadcast({ audioPlaying, variant = "bleed" }: HeroGlob
         className={
           variant === "centered"
             ? "absolute top-1/2 left-1/2 h-[560px] w-[560px] lg:h-[680px] lg:w-[680px]"
+            : variant === "mobile"
+            ? "absolute top-1/2 left-1/2 h-[200px] w-[200px]"
             : "absolute top-1/2 right-0 h-[440px] w-[440px] md:h-[480px] md:w-[480px] lg:h-[520px] lg:w-[520px]"
         }
         style={{
           transform:
-            variant === "centered" ? "translate(-50%, -50%)" : "translate(54%, -50%)",
+            variant === "bleed" ? "translate(54%, -50%)" : "translate(-50%, -50%)",
         }}
       >
         <svg
