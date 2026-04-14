@@ -46,6 +46,9 @@ export function TranscriptHighlight({
     // Find the first word whose cumulative weight meets or exceeds our target
     activeWordIndex = cumulative.findIndex((w) => w >= targetWeight);
     if (activeWordIndex === -1) activeWordIndex = words.length - 1;
+    // TTS speech rate outpaces the character-weight model by ~1-2 words;
+    // nudge forward to keep the highlight visually in sync.
+    activeWordIndex = Math.min(words.length - 1, activeWordIndex + 2);
   }
 
   // Scroll the active word into the upper-third of the container

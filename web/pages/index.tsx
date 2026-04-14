@@ -63,10 +63,6 @@ export default function Home() {
       setDisplayProgress(progress === 100 ? 100 : 0);
       return;
     }
-    if (progress === 0) {
-      setDisplayProgress(0);
-      return;
-    }
     const id = setInterval(() => {
       setDisplayProgress((prev) => {
         if (prev < progress) {

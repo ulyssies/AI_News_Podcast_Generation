@@ -84,6 +84,10 @@ async def generate_stream_endpoint(payload: GenerateRequest):
         )
 
     async def event_stream():
+        # Flush a 1% event immediately so any buffering proxy releases the connection.
+        # Without this, the first real event (10%) may be held in nginx's buffer for
+        # 20-30 s until enough bytes accumulate to trigger an automatic flush.
+        yield f"data: {json.dumps({'percent': 1, 'message': 'Connecting…'})}\n\n"
         try:
             async for percent, message, result in generate_episode_stream(
                 length=payload.length,
