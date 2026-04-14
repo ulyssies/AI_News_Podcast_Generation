@@ -28,7 +28,7 @@ export function BriefingPlayerDock({
   return (
     <div
       id="briefing-player-dock"
-      className="fixed inset-x-0 bottom-0 z-[100] border-t border-[#222222] bg-[#0a0a0a]/95 backdrop-blur-md shadow-[0_-12px_40px_rgba(0,0,0,0.5)] safe-area-pb"
+      className="max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:z-[100] border-t border-[#222222] bg-[#0a0a0a]/95 backdrop-blur-md shadow-[0_-12px_40px_rgba(0,0,0,0.5)]"
       style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
     >
       {/* Progress bar */}

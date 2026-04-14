@@ -105,10 +105,11 @@ All UI work references the shared design system before touching any styles.
 
 ## Current Priorities
 
-1. Validate streaming pipeline + Haiku model quality on live Render deployment
-2. Test transcript highlight drift improvement with real audio — seek accuracy still imperfect
-3. Consider passing `numChunks` to TranscriptHighlight to subtract estimated inter-chunk silence for better seek accuracy
-4. CORS and deployment config kept in sync between Vercel frontend and Render backend
+1. Confirm Vercel deploy looks correct after global color pass — check for any remaining blue-tinted surfaces
+2. Validate streaming pipeline + Haiku model quality on live Render deployment
+3. Test transcript highlight drift with real audio after font/height reduction
+4. Consider passing `numChunks` to TranscriptHighlight to subtract estimated inter-chunk silence for better seek accuracy
+5. CORS and deployment config kept in sync between Vercel frontend and Render backend
 
 ---
 

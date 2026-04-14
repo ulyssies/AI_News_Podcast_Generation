@@ -26,21 +26,33 @@ type CategoryBriefingGridProps = {
   onSelectCategory: (categoryKey: string, label: string) => void;
   loading: boolean;
   loadingCategory: string | null;
+  /** Compact mode: 2-col fixed grid, flat aspect ratio, tighter spacing.
+   *  Used when rendered inside a narrow fixed-height left column. */
+  compact?: boolean;
 };
 
 export function CategoryBriefingGrid({
   onSelectCategory,
   loading,
   loadingCategory,
+  compact = false,
 }: CategoryBriefingGridProps) {
   return (
-    <section className="mt-6 sm:mt-8">
-      <div className="flex items-baseline justify-between gap-2 mb-3 sm:mb-4">
-        <h2 className="font-display font-bold text-sm text-white tracking-tight">Go deeper</h2>
+    <section className={compact ? "mt-4" : "mt-6 sm:mt-8"}>
+      <div className={`flex items-baseline justify-between gap-2 ${compact ? "mb-2" : "mb-3 sm:mb-4"}`}>
+        <h2 className={`font-display font-bold text-white tracking-tight ${compact ? "text-xs" : "text-sm"}`}>
+          Go deeper
+        </h2>
         <span className="text-[10px] text-slate-500 whitespace-nowrap">~10 min each</span>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 lg:gap-4">
+      <div
+        className={
+          compact
+            ? "grid grid-cols-2 gap-1.5"
+            : "grid grid-cols-2 sm:grid-cols-4 gap-3 lg:gap-4"
+        }
+      >
         {BRIEFING_CATEGORIES.map((cat) => {
           const busy = loading && loadingCategory === cat.key;
           const Icon = CATEGORY_ICONS[cat.iconId];
@@ -55,9 +67,11 @@ export function CategoryBriefingGrid({
                 background: cat.cardBg,
                 borderColor: cat.borderColor,
               }}
-              className="group relative flex flex-col text-left rounded-xl border overflow-hidden aspect-[3/2] transition-all duration-200 hover:scale-[1.025] hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
+              className={`group relative flex flex-col text-left rounded-xl border overflow-hidden transition-all duration-200 hover:scale-[1.025] hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-white/25 ${
+                compact ? "aspect-[5/2]" : "aspect-[3/2]"
+              }`}
             >
-              {/* Vignette — darkens edges for depth */}
+              {/* Vignette */}
               <div
                 className="absolute inset-0 pointer-events-none"
                 style={{
@@ -66,24 +80,30 @@ export function CategoryBriefingGrid({
                 }}
               />
 
-              {/* Icon — upper area, large */}
-              <div className="relative flex-1 flex items-center justify-center pt-3 pb-1">
+              {/* Icon */}
+              <div className={`relative flex-1 flex items-center justify-center ${compact ? "pt-1.5 pb-0" : "pt-3 pb-1"}`}>
                 <Icon
                   style={{ color: cat.iconColor }}
-                  className="h-9 w-9 sm:h-10 sm:w-10 lg:h-11 lg:w-11 shrink-0 drop-shadow-[0_0_12px_currentColor] transition-transform duration-200 group-hover:scale-110"
+                  className={`shrink-0 drop-shadow-[0_0_12px_currentColor] transition-transform duration-200 group-hover:scale-110 ${
+                    compact
+                      ? "h-5 w-5 sm:h-6 sm:w-6"
+                      : "h-9 w-9 sm:h-10 sm:w-10 lg:h-11 lg:w-11"
+                  }`}
                   strokeWidth={1.3}
                   aria-hidden
                 />
               </div>
 
-              {/* Label + description — bottom */}
-              <div className="relative px-3 pb-3 pt-0">
-                <p className="text-[11px] sm:text-xs font-semibold text-white leading-tight">
+              {/* Label */}
+              <div className={`relative ${compact ? "px-2 pb-1.5" : "px-3 pb-3 pt-0"}`}>
+                <p className={`font-semibold text-white leading-tight ${compact ? "text-[10px]" : "text-[11px] sm:text-xs"}`}>
                   {cat.label}
                 </p>
-                <p className="mt-0.5 text-[9px] sm:text-[10px] text-white/45 leading-tight line-clamp-1 hidden sm:block">
-                  {cat.description}
-                </p>
+                {!compact && (
+                  <p className="mt-0.5 text-[9px] sm:text-[10px] text-white/45 leading-tight line-clamp-1 hidden sm:block">
+                    {cat.description}
+                  </p>
+                )}
               </div>
 
               {/* Generating overlay */}

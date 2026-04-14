@@ -4,12 +4,15 @@ import { useEffect, useId, useRef, useState } from "react";
 
 type HeroGlobeBroadcastProps = {
   audioPlaying: boolean;
+  /** "bleed" (default): globe positioned right, bleeds off the card edge.
+   *  "centered": globe centered within its container — used for the idle right panel. */
+  variant?: "bleed" | "centered";
 };
 
 const DEG = Math.PI / 180;
 const TILT = 23 * DEG;
-/** ~75s per full rotation */
-const SPIN_PERIOD_SEC = 75;
+/** ~25s per full rotation */
+const SPIN_PERIOD_SEC = 25;
 const R = 292; // large sphere; ~584px diameter in viewBox space
 
 function rotateTilt(
@@ -79,7 +82,7 @@ function parallelToPath(phi: number, spin: number): string {
 const PARALLELS_DEG = [75, 60, 45, 30, 15, 0, -15, -30, -45, -60, -75];
 const MERIDIANS_COUNT = 12;
 
-export function HeroGlobeBroadcast({ audioPlaying }: HeroGlobeBroadcastProps) {
+export function HeroGlobeBroadcast({ audioPlaying, variant = "bleed" }: HeroGlobeBroadcastProps) {
   const uid = useId().replace(/:/g, "");
   const spinRef = useRef(0);
   const rafRef = useRef<number>(0);
@@ -135,8 +138,15 @@ export function HeroGlobeBroadcast({ audioPlaying }: HeroGlobeBroadcastProps) {
       aria-hidden
     >
       <div
-        className="absolute top-1/2 right-0 h-[440px] w-[440px] md:h-[480px] md:w-[480px] lg:h-[520px] lg:w-[520px]"
-        style={{ transform: "translate(54%, -50%)" }}
+        className={
+          variant === "centered"
+            ? "absolute top-1/2 left-1/2 h-[560px] w-[560px] lg:h-[680px] lg:w-[680px]"
+            : "absolute top-1/2 right-0 h-[440px] w-[440px] md:h-[480px] md:w-[480px] lg:h-[520px] lg:w-[520px]"
+        }
+        style={{
+          transform:
+            variant === "centered" ? "translate(-50%, -50%)" : "translate(54%, -50%)",
+        }}
       >
         <svg
           width="100%"

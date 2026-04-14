@@ -12,6 +12,127 @@ body {
   font-family: var(--font-sans);
 }
 
+/* ─────────────────────────────────────────────────────────────────
+   MOBILE LAYOUT  (max-width: 1024px)
+   Desktop at ≥1024px is completely untouched — every rule here is
+   scoped inside this single media query.
+   ───────────────────────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+
+  /* Prevent any horizontal scroll from overflowing children */
+  main {
+    overflow-x: hidden;
+  }
+
+  /* ── TOP ROW: hero (left) + category grid (right) side-by-side ── */
+
+  /*
+   * The inner left-column div becomes a 2-column CSS grid.
+   * Row 1: site header  (grid-column: span 2)
+   * Row 2: hero card  |  Go Deeper grid
+   */
+  #layout-left-inner {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto 1fr;
+    row-gap: 8px;
+    column-gap: 12px;
+    padding: 12px;
+    overflow: visible; /* not a scroll container on mobile */
+  }
+
+  /* Site header: spans both columns, flush to top */
+  #layout-left-inner > header {
+    grid-column: 1 / -1;
+    margin-bottom: 0; /* reset Tailwind mb-4 */
+  }
+
+  /* Hero + category wrappers: prevent content from overflowing their columns */
+  #mobile-hero,
+  #mobile-categories {
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  /* Category section sits in the right column — remove its default top margin */
+  #mobile-categories > section {
+    margin-top: 0;
+  }
+
+  /* ── HERO: scale content for a ~50 vw column ── */
+
+  /*
+   * Headline: Tailwind sets 2rem (xs) → 2.5rem (sm) → 1.875rem (md).
+   * All of these overflow in a half-screen column. Cap at 0.9375rem (15px).
+   * Specificity: 1 ID + 1 element > any Tailwind utility — wins cleanly.
+   */
+  #mobile-hero h2 {
+    font-size: 0.9375rem; /* 15px — fits "Everything you need" on ~1 line */
+    line-height: 1.1;
+  }
+
+  /* Tighten the hero card's inner content padding (Tailwind sets px-5 py-5) */
+  #mobile-hero section > div:not([aria-hidden]) {
+    padding: 10px;
+  }
+
+  /* Tighten the flex-col gap inside the hero content (Tailwind sets gap-2.5) */
+  #mobile-hero section > div:not([aria-hidden]) > div {
+    gap: 8px;
+  }
+
+  /* Episode-length pills: wrap so all three remain legible; tighten padding */
+  #length-pills {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  #length-pills > button {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  /* CTA button: ensure it doesn't overflow the column */
+  #mobile-hero button[type="button"]:not(#length-pills > button) {
+    width: 100%;
+  }
+
+  /* ── CATEGORY GRID: fixed-height cards so all 8 fit without scrolling ── */
+
+  /*
+   * Override Tailwind's aspect-[5/2] with a fixed height.
+   * At 48px: icon (20px) + label (~12px) + padding = comfortable.
+   * Specificity: 1 ID + 1 attribute selector > Tailwind utility.
+   */
+  #mobile-categories button[type="button"] {
+    aspect-ratio: auto;
+    height: 48px;
+  }
+
+  /* Tighten the gap between cards (Tailwind compact sets gap-1.5 = 6px) */
+  #mobile-categories .grid {
+    gap: 4px;
+  }
+
+  /* ── RIGHT COLUMN: transcript + sources flow full-width below top row ── */
+  /*
+   * The right column (#layout-right-content) is already a block element
+   * below lg — it stacks naturally under the left column. No changes needed
+   * beyond removing the scroll-container behaviour desktop relies on.
+   */
+  #layout-right-content {
+    overflow: visible;
+  }
+
+  /*
+   * Globe (idle state): already hidden via `hidden lg:block` Tailwind class.
+   * Loading state:       already hidden via `hidden lg:flex` Tailwind class.
+   * Player dock:         already fixed via `max-lg:fixed ... bottom-0 z-[100]`.
+   * Bottom padding:      already applied via `max-lg:pb-24` when dockVisible.
+   * Nothing extra needed here.
+   */
+}
+
 @keyframes hero-wave-bar {
   0%,
   100% {
