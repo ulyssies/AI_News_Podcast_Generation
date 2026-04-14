@@ -105,9 +105,10 @@ All UI work references the shared design system before touching any styles.
 
 ## Current Priorities
 
-1. Test generation speed improvements on Render (parallel TTS + single Claude call)
-2. Validate word-highlight transcript UX with real audio — check drift at seek points
-3. CORS and deployment config kept in sync between Vercel frontend and Render backend
+1. Validate streaming pipeline + Haiku model quality on live Render deployment
+2. Test transcript highlight drift improvement with real audio — seek accuracy still imperfect
+3. Consider passing `numChunks` to TranscriptHighlight to subtract estimated inter-chunk silence for better seek accuracy
+4. CORS and deployment config kept in sync between Vercel frontend and Render backend
 
 ---
 
@@ -116,8 +117,8 @@ All UI work references the shared design system before touching any styles.
 - Rate limiting is IP-based via slowapi — easily bypassed, not production-grade
 - In-memory episode cache (50 episodes max) is lost on every server restart
 - Audio is returned as base64 — not suitable for large scale
-- Generation time reduced but still dependent on Claude token output speed (~1–2 min for medium)
-- Transcript word highlight drifts on seek — no real timestamps from OpenAI TTS
+- Transcript highlight drifts on seek — character-weighted positions help but inter-chunk TTS silence still accumulates without real timestamps
+- Streaming fallback (sync path) fires if `ANTHROPIC_API_KEY` missing — OpenAI script fallback untested with new streaming pipeline
 - No auth, no persistence, no multi-user support
 
 ---

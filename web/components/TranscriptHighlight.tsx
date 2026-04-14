@@ -63,10 +63,10 @@ export function TranscriptHighlight({
   return (
     <div
       ref={containerRef}
-      className="overflow-y-auto h-64 sm:h-80 lg:h-96 scroll-smooth px-1"
+      className="overflow-y-auto h-48 sm:h-56 scroll-smooth px-1"
       style={{ scrollbarWidth: "none" }}
     >
-      <p className="text-base sm:text-lg leading-loose sm:leading-loose text-left">
+      <p className="text-[11px] sm:text-xs leading-relaxed text-left">
         {words.map((word, i) => {
           const isPast = i < activeWordIndex;
           const isActive = i === activeWordIndex;

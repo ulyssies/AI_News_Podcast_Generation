@@ -86,8 +86,8 @@ export function AudioPlayer({
           onClick={playing ? pause : play}
           disabled={!src}
           aria-label={playing ? "Pause" : "Play"}
-          className={`flex-shrink-0 rounded-full bg-white text-zinc-900 flex items-center justify-center hover:bg-zinc-100 focus:outline-none focus:ring-2 focus:ring-zinc-300 focus:ring-offset-2 focus:ring-offset-black disabled:opacity-50 disabled:cursor-not-allowed transition-all ${
-            compact ? "w-8 h-8" : "w-10 h-10"
+          className={`flex-shrink-0 rounded-full bg-[#6366f1] text-white flex items-center justify-center hover:bg-[#5152d4] focus:outline-none focus:ring-2 focus:ring-[#6366f1] focus:ring-offset-2 focus:ring-offset-black disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-150 ${
+            compact ? "w-9 h-9" : "w-11 h-11"
           }`}
         >
           {playing ? (
@@ -120,8 +120,8 @@ export function AudioPlayer({
             {formatTime(currentTime)}
           </span>
           <div
-            className={`flex-1 rounded-full bg-slate-800 cursor-pointer overflow-hidden group ${
-              compact ? "h-1" : "h-1.5"
+            className={`flex-1 rounded-full bg-[#222222] cursor-pointer overflow-hidden group ${
+              compact ? "h-1.5" : "h-2"
             }`}
             onClick={handleSeek}
             role="progressbar"
@@ -131,7 +131,7 @@ export function AudioPlayer({
             aria-label="Playback progress"
           >
             <div
-              className="h-full rounded-full bg-white transition-all duration-75 ease-linear group-hover:bg-zinc-200"
+              className="h-full rounded-full bg-[#6366f1] transition-all duration-75 ease-linear group-hover:bg-[#7c7ff5]"
               style={{ width: `${progress * 100}%` }}
             />
           </div>

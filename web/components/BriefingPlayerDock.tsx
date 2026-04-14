@@ -28,12 +28,12 @@ export function BriefingPlayerDock({
   return (
     <div
       id="briefing-player-dock"
-      className="fixed inset-x-0 bottom-0 z-[100] border-t border-slate-800/90 bg-[#070709]/95 backdrop-blur-md shadow-[0_-12px_40px_rgba(0,0,0,0.45)] safe-area-pb"
+      className="fixed inset-x-0 bottom-0 z-[100] border-t border-[#222222] bg-[#0a0a0a]/95 backdrop-blur-md shadow-[0_-12px_40px_rgba(0,0,0,0.5)] safe-area-pb"
       style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
     >
       {/* Progress bar */}
       {loading && !audioUrl && (
-        <div className="absolute inset-x-0 top-0 h-[2px] bg-slate-800/60 overflow-hidden">
+        <div className="absolute inset-x-0 top-0 h-[2px] bg-[#1a1a1a] overflow-hidden">
           <div
             className="h-full bg-indigo-500 transition-all duration-300 ease-out"
             style={{ width: `${progress}%` }}
@@ -63,7 +63,7 @@ export function BriefingPlayerDock({
                 compact
                 onPlayStateChange={onPlayStateChange}
                 onTimeUpdate={onTimeUpdate}
-                className="rounded-lg bg-slate-900/40 border border-slate-800/80 px-2 py-1.5"
+                className="rounded-lg bg-[#111111] border border-[#222222] px-2 py-1.5"
               />
             </div>
           </div>

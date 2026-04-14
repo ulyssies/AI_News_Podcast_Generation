@@ -1,9 +1,10 @@
 import Head from "next/head";
 import { useCallback, useEffect, useState } from "react";
-import { Info, X } from "lucide-react";
+import { Info } from "lucide-react";
 import { BriefingPlayerDock } from "../components/BriefingPlayerDock";
 import { CategoryBriefingGrid } from "../components/CategoryBriefingGrid";
 import { DailyBriefingHero } from "../components/DailyBriefingHero";
+import { InfoModal } from "../components/InfoModal";
 import { TranscriptHighlight } from "../components/TranscriptHighlight";
 
 type GenerateResponse = {
@@ -27,8 +28,20 @@ export default function Home() {
   const [playerInstanceKey, setPlayerInstanceKey] = useState(0);
   const [briefingAudioPlaying, setBriefingAudioPlaying] = useState(false);
   const [audioTime, setAudioTime] = useState({ currentTime: 0, duration: 0 });
-  const [aboutOpen, setAboutOpen] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
   const [displayProgress, setDisplayProgress] = useState(0);
+
+  // Show modal on first visit; never again once dismissed via localStorage.
+  useEffect(() => {
+    if (!localStorage.getItem("cda_seen_intro")) {
+      setModalOpen(true);
+    }
+  }, []);
+
+  const handleModalClose = useCallback(() => {
+    localStorage.setItem("cda_seen_intro", "1");
+    setModalOpen(false);
+  }, []);
 
   useEffect(() => {
     if (!result?.audio_url) {
@@ -182,68 +195,31 @@ export default function Home() {
         <title>Daily Briefing</title>
       </Head>
       <main
-        className={`min-h-screen bg-[#050508] text-slate-100 ${dockVisible ? "pb-24 sm:pb-28" : ""}`}
+        className={`min-h-screen bg-[#0a0a0a] text-slate-100 ${dockVisible ? "pb-24 sm:pb-28" : ""}`}
       >
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
 
           {/* Site header */}
           <header className="mb-4 sm:mb-6">
             <div className="flex items-start justify-between gap-4">
-              {!aboutOpen && (
-                <div>
-                  <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-slate-600 leading-none">
-                    Curated daily audio
-                  </p>
-                  <h1 className="mt-1 font-display font-bold text-base sm:text-lg tracking-tight text-white leading-tight">
-                    Stay informed—without the noise
-                  </h1>
-                </div>
-              )}
-              {aboutOpen && <div />}
+              <div>
+                <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-slate-600 leading-none">
+                  Curated daily audio
+                </p>
+                <h1 className="mt-1 font-display font-bold text-base sm:text-lg tracking-tight text-white leading-tight">
+                  Stay informed—without the noise
+                </h1>
+              </div>
               <button
                 type="button"
-                onClick={() => setAboutOpen((o) => !o)}
-                aria-label={aboutOpen ? "Close about" : "How it works"}
+                onClick={() => setModalOpen(true)}
+                aria-label="How it works"
                 className="flex-shrink-0 flex items-center gap-1.5 mt-1 text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
               >
-                {aboutOpen ? (
-                  <X className="h-3.5 w-3.5" />
-                ) : (
-                  <Info className="h-3.5 w-3.5" />
-                )}
-                <span>{aboutOpen ? "Close" : "How it works"}</span>
+                <Info className="h-3.5 w-3.5" />
+                <span>How it works</span>
               </button>
             </div>
-
-            {aboutOpen && (
-              <div className="rounded-xl border border-slate-800/70 bg-[#08080c] px-5 py-5 text-[11px] sm:text-xs text-slate-400 leading-relaxed space-y-4">
-                <div>
-                  <p className="text-[9px] font-semibold uppercase tracking-[0.28em] text-slate-600 leading-none">
-                    Curated daily audio
-                  </p>
-                  <h1 className="mt-1 font-display font-bold text-base sm:text-lg tracking-tight text-white leading-tight">
-                    Stay informed—without the noise
-                  </h1>
-                  <p className="mt-2 text-[11px] text-slate-400 leading-relaxed">
-                    A daily news briefing delivered as a podcast-style episode — factual, neutral, and free of fluff. Pick a category or get the full picture at once.
-                  </p>
-                </div>
-                <div className="flex flex-col sm:flex-row gap-4 sm:gap-0 pt-1 border-t border-slate-800/60">
-                  {[
-                    ["01", "News fetch", "Real articles pulled from NewsAPI and Google News RSS across 8 curated categories."],
-                    ["02", "Script generation", "Claude reads the articles and writes a broadcast-quality script — neutral tone, no spin."],
-                    ["03", "Text-to-speech", "OpenAI TTS converts the script to audio in parallel chunks for speed."],
-                    ["04", "Playback", "A sticky player serves the audio with a live transcript and source links."],
-                  ].map(([num, title, desc]) => (
-                    <div key={num} className="flex-1 sm:border-l sm:border-slate-800/60 sm:pl-4 first:pl-0 first:border-0">
-                      <p className="text-[9px] uppercase tracking-widest text-slate-600 mb-0.5">{num}</p>
-                      <p className="text-slate-300 font-medium text-[10px]">{title}</p>
-                      <p className="mt-0.5 text-slate-500 text-[10px] leading-snug">{desc}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </header>
 
           {/* Hero */}
@@ -295,8 +271,8 @@ export default function Home() {
                     {episodeTitle}
                   </span>
                 </div>
-                <div className="rounded-2xl border border-slate-800/70 bg-[#08080c] overflow-hidden">
-                  <div className="px-5 py-5 sm:px-7 sm:py-6">
+                <div className="rounded-xl border border-[#222222] bg-[#111111] overflow-hidden">
+                  <div className="px-5 py-4 sm:px-6 sm:py-5">
                     <TranscriptHighlight
                       transcript={result.transcript}
                       currentTime={audioTime.currentTime}
@@ -309,29 +285,35 @@ export default function Home() {
               {/* Sources */}
               {result.sources?.length > 0 && (
                 <div>
-                  <h3 className="text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-3">
+                  <h3 className="text-[10px] font-semibold uppercase tracking-widest text-[#555555] mb-3">
                     Sources
                   </h3>
-                  <ul className="space-y-2">
-                    {result.sources.map((source, idx) => (
-                      <li key={idx} className="flex items-start gap-2 text-[11px] leading-snug">
-                        <span className="text-slate-700 mt-px select-none">—</span>
-                        <span>
+                  <div className="rounded-xl border border-[#222222] bg-[#111111] overflow-hidden">
+                    <div className="max-h-56 overflow-y-auto" style={{ scrollbarWidth: "none" }}>
+                      {result.sources.map((source, idx) => (
+                        <div
+                          key={idx}
+                          className={`group flex items-center justify-between gap-4 px-4 py-3 transition-colors duration-150 hover:bg-[#161616] ${
+                            idx < result.sources.length - 1 ? "border-b border-[#1a1a1a]" : ""
+                          }`}
+                        >
                           <a
                             href={source.url}
                             target="_blank"
                             rel="noreferrer"
-                            className="text-slate-300 hover:text-white transition-colors hover:underline underline-offset-2"
+                            className="text-[11px] text-[#aaaaaa] group-hover:text-white transition-colors duration-150 leading-snug min-w-0 truncate"
                           >
                             {source.title}
                           </a>
                           {source.publisher && (
-                            <span className="text-slate-600"> · {source.publisher}</span>
+                            <span className="flex-shrink-0 text-[9px] font-medium uppercase tracking-wide text-[#666666] group-hover:text-[#aaaaaa] bg-[#1a1a1a] group-hover:bg-[#222222] border border-[#222222] group-hover:border-[#333333] px-2 py-1 rounded-[4px] transition-colors duration-150">
+                              {source.publisher}
+                            </span>
                           )}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               )}
             </section>
@@ -350,6 +332,8 @@ export default function Home() {
           onTimeUpdate={handleTimeUpdate}
         />
       </main>
+
+      <InfoModal open={modalOpen} onClose={handleModalClose} />
     </>
   );
 }

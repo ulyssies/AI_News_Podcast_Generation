@@ -7,7 +7,7 @@
 
 html,
 body {
-  background-color: #000000;
+  background-color: #0a0a0a;
   overscroll-behavior: none;
   font-family: var(--font-sans);
 }
