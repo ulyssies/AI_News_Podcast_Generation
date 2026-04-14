@@ -1,4 +1,4 @@
-[<div align="center">
+<div align="center">
 
 # Curated Daily Audio
 
@@ -33,8 +33,13 @@ Category select → News fetch → Claude script generation → OpenAI TTS → A
 | **Today's Full Briefing** | One cohesive episode covering all 8 categories in order — the main experience |
 | **Category Deep Dives** | 8 curated categories, each with tailored news queries for relevant results |
 | **Episode length** | Short (~5 min), medium (~15 min), or long (~30 min) |
-| **Sticky audio player** | Persistent bottom bar player — play/pause, seek, progress bar |
-| **Transcript & sources** | Full scrollable transcript and links to every source article |
+| **Streaming generation** | Real-time progress via SSE — see percentage updates as the episode is built |
+| **Sticky audio player** | Persistent bottom bar player — play/pause, seek, progress bar. Fixed on mobile, pinned to the right column on desktop |
+| **Transcript & sources** | Full scrollable transcript with source links for every article used |
+| **Animated globe** | Idle-state SVG globe in the right panel; disappears once a briefing loads |
+| **Split desktop layout** | Sticky left sidebar (hero + category grid) alongside a scrollable right content column |
+| **Responsive mobile layout** | Two-column top row (hero left, category grid right) stacking to full-width below |
+| **First-visit info modal** | Explains how the app works — shown once, dismissible, stored in localStorage |
 | **Caching** | Same category + length returns a cached episode to save API costs (up to 50 episodes in memory) |
 | **Balanced politics** | Politics category pulls from both left and right-leaning sources equally |
 | **Rate limiting** | 5 generations per IP per 24 hours to prevent API abuse |
@@ -61,7 +66,8 @@ Category select → News fetch → Claude script generation → OpenAI TTS → A
 1. **News fetch** — each category maps to tailored search queries via NewsAPI (or Google News RSS fallback). The Full Briefing pulls from all 8 categories and merges/deduplicates articles.
 2. **Script generation** — Anthropic's Claude generates a broadcast-style script from the fetched articles, instructed to write in a neutral, factual journalist tone with no opinion or political framing.
 3. **TTS** — OpenAI TTS converts the script to audio.
-4. **Playback** — the frontend serves a sticky audio player with transcript and source links.
+4. **Streaming** — progress events are streamed via SSE so the UI can show live percentage updates without blocking.
+5. **Playback** — the frontend serves a sticky audio player with live transcript highlighting and source links.
 
 ---
 
@@ -81,12 +87,18 @@ Category select → News fetch → Claude script generation → OpenAI TTS → A
 │       └── trending.py            # Trending topics via RSS
 ├── web/
 │   ├── pages/
-│   │   └── index.tsx              # Main UI
+│   │   └── index.tsx              # Main UI — split layout, state management, SSE client
 │   ├── components/
-│   │   ├── AudioPlayer.tsx        # Sticky bottom audio player
-│   │   └── CategoryCards.tsx      # 8 category cards grid
-│   └── lib/
-│       └── apiClient.ts
+│   │   ├── BriefingPlayerDock.tsx # Audio player — fixed mobile, pinned desktop
+│   │   ├── CategoryBriefingGrid.tsx # 8 category cards grid (compact + full modes)
+│   │   ├── DailyBriefingHero.tsx  # Full briefing hero card with length picker
+│   │   ├── HeroGlobeBroadcast.tsx # Animated SVG globe for idle desktop state
+│   │   ├── InfoModal.tsx          # First-visit info modal
+│   │   └── TranscriptHighlight.tsx # Scrollable transcript with playback position
+│   ├── lib/
+│   │   └── categories.ts          # Category definitions, icons, and card gradient tokens
+│   └── styles/
+│       └── globals.css            # Tailwind v4 theme + mobile layout media query
 └── SECRETS.md
 ```
 
@@ -164,16 +176,23 @@ Full interactive docs available at `http://localhost:8000/docs` when the API is 
 
 ---
 
+## Deployment
+
+- **Frontend:** Vercel — auto-deploys from `main`. Set `NEXT_PUBLIC_API_URL` to your backend URL.
+- **Backend:** Render — runs `uvicorn api.main:app`. Set environment variables in the Render dashboard. Ensure `allow_origins` in `api/main.py` includes your Vercel domain.
+
+---
+
 ## POC Limitations
 
-This is scoped for local exploration. Before any production use, you'd want to address:
+This is scoped for demonstration. Before any production use, you'd want to address:
 
 - **Rate limiting is IP-based** — easily bypassed, not a production-grade solution
 - **In-memory cache** — up to 50 episodes cached, lost on server restart
 - **Base64 audio** — works for POC; replace with streaming or object storage at scale
 - **Generation time** — 15–30 min episodes can take 30–60 seconds to generate
-- **Single-user, local focus** — not tuned for concurrent or production load
-- **CORS is localhost only** — update `allow_origins` in `main.py` before deploying
+- **Single-user focus** — not tuned for concurrent or production load
+- **Transcript sync drift** — character-weighted position estimation accumulates error over long episodes; real word timestamps would fix this
 
 ---
 
@@ -190,4 +209,4 @@ This is scoped for local exploration. Before any production use, you'd want to a
 
 <div align="center">
 <sub>Proof of Concept · Not production-ready · Extend freely</sub>
-</div>]
+</div>
