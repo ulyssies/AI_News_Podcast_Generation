@@ -258,8 +258,11 @@ export default function Home() {
 
         {/* ── MOBILE GLOBE — idle visual between controls and transcript ── */}
         {!result && !loading && !error && (
-          <div className="lg:hidden relative h-[200px] my-2" id="mobile-globe-container">
-            <HeroGlobeBroadcast audioPlaying={false} variant="mobile" />
+          <div className="lg:hidden" id="mobile-globe-container">
+            <div id="mobile-globe-sphere">
+              <HeroGlobeBroadcast audioPlaying={false} variant="mobile" />
+            </div>
+            <p id="mobile-globe-label">Select a briefing to begin</p>
           </div>
         )}
 

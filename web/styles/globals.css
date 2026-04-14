@@ -35,6 +35,7 @@ body {
     display: grid;
     grid-template-columns: 1fr 1fr;
     grid-template-rows: auto 1fr;
+    align-items: stretch; /* both cards in the top row share the same height */
     row-gap: 8px;
     column-gap: 12px;
     padding: 12px;
@@ -47,10 +48,17 @@ body {
     margin-bottom: 0; /* reset Tailwind mb-4 */
   }
 
-  /* Hero: prevent content from overflowing its column */
+  /* Hero: prevent overflow and stretch to match the category card height */
   #mobile-hero {
     min-width: 0;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Hero section fills the full cell so the card background reaches the bottom */
+  #mobile-hero > section {
+    flex: 1;
   }
 
   /* Go Deeper: card container matching the hero card */
@@ -141,12 +149,42 @@ body {
   }
 
   /*
-   * Globe (idle state): already hidden via `hidden lg:block` Tailwind class.
-   * Loading state:       already hidden via `hidden lg:flex` Tailwind class.
-   * Player dock:         already fixed via `max-lg:fixed ... bottom-0 z-[100]`.
-   * Bottom padding:      already applied via `max-lg:pb-24` when dockVisible.
-   * Nothing extra needed here.
+   * Desktop globe + loading state: already handled by `hidden lg:block` /
+   * `hidden lg:flex` Tailwind classes — nothing to do here.
+   * Player dock:    fixed via `max-lg:fixed ... bottom-0 z-[100]`.
+   * Bottom padding: applied via `max-lg:pb-24` when dockVisible.
    */
+
+  /* ── MOBILE GLOBE: idle visual between top row and transcript ── */
+
+  /* Wrapper: column-flex so the label sits naturally below the sphere */
+  #mobile-globe-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-top: 4px;
+    margin-bottom: 4px;
+  }
+
+  /*
+   * Sphere container: full viewport width, 320px tall — the globe SVG is 320×320
+   * and centers itself via translate(-50%,-50%) within this positioned ancestor.
+   */
+  #mobile-globe-sphere {
+    position: relative;
+    width: 100%;
+    height: 320px;
+  }
+
+  /* "Select a briefing to begin" — mirrors the desktop idle label */
+  #mobile-globe-label {
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    color: #2e2e2e;
+    margin-top: 4px;
+  }
 }
 
 @keyframes hero-wave-bar {

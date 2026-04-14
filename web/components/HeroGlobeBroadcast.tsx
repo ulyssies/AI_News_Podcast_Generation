@@ -143,7 +143,7 @@ export function HeroGlobeBroadcast({ audioPlaying, variant = "bleed" }: HeroGlob
           variant === "centered"
             ? "absolute top-1/2 left-1/2 h-[560px] w-[560px] lg:h-[680px] lg:w-[680px]"
             : variant === "mobile"
-            ? "absolute top-1/2 left-1/2 h-[200px] w-[200px]"
+            ? "absolute top-1/2 left-1/2 h-[320px] w-[320px]"
             : "absolute top-1/2 right-0 h-[440px] w-[440px] md:h-[480px] md:w-[480px] lg:h-[520px] lg:w-[520px]"
         }
         style={{
