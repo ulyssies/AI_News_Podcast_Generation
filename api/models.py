@@ -20,4 +20,5 @@ class GenerateEpisodeResponse(BaseModel):
     audio_url: str
     transcript: str
     sources: List[EpisodeSource]
-
+    total_chunks: Optional[int] = None
+    audio_chunks: Optional[List[str]] = None

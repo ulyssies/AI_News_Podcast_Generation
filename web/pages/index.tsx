@@ -1,5 +1,5 @@
 import Head from "next/head";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Info } from "lucide-react";
 import { BriefingPlayerDock } from "../components/BriefingPlayerDock";
 import { CategoryBriefingGrid } from "../components/CategoryBriefingGrid";
@@ -12,19 +12,41 @@ type GenerateResponse = {
   audio_url: string;
   transcript: string;
   sources: { title: string; url: string; publisher?: string | null }[];
+  total_chunks?: number | null;
+  audio_chunks?: string[] | null;
 };
+
+type EpisodeSource = GenerateResponse["sources"][number];
 
 type BriefingMode = "full_daily" | "category";
 type AudioChunk = {
   index: number;
   audio_url: string;
+  text?: string;
+  total_chunks?: number | null;
 };
 
 const FETCH_TIMEOUT_MS = 10 * 60 * 1000;
 const RESTING_AUDIO_LEVELS = [0.26, 0.5, 0.64, 0.36, 0.22, 0.19, 0.14];
 
+function estimateEpisodeDurationSeconds(mode: BriefingMode, length: string): number {
+  if (mode === "category" && length === "medium") return 9 * 60;
+  if (length === "long") return 28 * 60;
+  if (length === "medium") return 14 * 60;
+  return 4.5 * 60;
+}
+
+function getContiguousAudioChunks(chunks: AudioChunk[]): AudioChunk[] {
+  const byIndex = new Map(chunks.map((chunk) => [chunk.index, chunk]));
+  const contiguous: AudioChunk[] = [];
+  for (let index = 0; byIndex.has(index); index += 1) {
+    contiguous.push(byIndex.get(index)!);
+  }
+  return contiguous;
+}
+
 export default function Home() {
-  const [fullLength, setFullLength] = useState<"short" | "medium" | "long">("medium");
+  const [fullLength, setFullLength] = useState<"short" | "medium" | "long">("short");
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [loadingMessage, setLoadingMessage] = useState("Preparing briefing...");
@@ -39,6 +61,10 @@ export default function Home() {
   const [modalOpen, setModalOpen] = useState(false);
   const [displayProgress, setDisplayProgress] = useState(0);
   const [audioChunks, setAudioChunks] = useState<AudioChunk[]>([]);
+  const [liveSources, setLiveSources] = useState<EpisodeSource[]>([]);
+  const [expectedChunkCount, setExpectedChunkCount] = useState<number | null>(null);
+  const [estimatedDurationSeconds, setEstimatedDurationSeconds] = useState<number | undefined>();
+  const [autoPlayGenerationAudio, setAutoPlayGenerationAudio] = useState(false);
 
   // Show modal on first visit; never again once dismissed via localStorage.
   useEffect(() => {
@@ -100,6 +126,10 @@ export default function Home() {
       setError(null);
       setResult(null);
       setAudioChunks([]);
+      setLiveSources([]);
+      setExpectedChunkCount(null);
+      setEstimatedDurationSeconds(estimateEpisodeDurationSeconds(mode, opts.length));
+      setAutoPlayGenerationAudio(true);
       setAudioTime({ currentTime: 0, duration: 0 });
       setEpisodeTitle(opts.title);
       setLoadingCategory(mode === "category" ? opts.categoryKey ?? null : null);
@@ -161,6 +191,7 @@ export default function Home() {
                 message?: string;
                 result?: GenerateResponse;
                 audio_chunk?: AudioChunk;
+                sources?: EpisodeSource[];
                 error?: string;
               };
               if (data.error) {
@@ -171,7 +202,16 @@ export default function Home() {
               }
               if (typeof data.percent === "number") setProgress(data.percent);
               if (data.message) setLoadingMessage(data.message);
+              if (data.sources?.length) {
+                setLiveSources(data.sources);
+              }
               if (data.audio_chunk?.audio_url) {
+                if (
+                  typeof data.audio_chunk.total_chunks === "number" &&
+                  data.audio_chunk.total_chunks > 0
+                ) {
+                  setExpectedChunkCount(data.audio_chunk.total_chunks);
+                }
                 setAudioChunks((prev) => {
                   const next = prev.filter((chunk) => chunk.index !== data.audio_chunk!.index);
                   next.push(data.audio_chunk!);
@@ -181,6 +221,11 @@ export default function Home() {
               }
               if (data.result) {
                 setResult(data.result);
+                setExpectedChunkCount(
+                  typeof data.result.total_chunks === "number" && data.result.total_chunks > 0
+                    ? data.result.total_chunks
+                    : null
+                );
                 setProgress(100);
                 setLoadingMessage("Ready");
                 gotResult = true;
@@ -207,11 +252,39 @@ export default function Home() {
     []
   );
 
-  const audioUrls = audioChunks.length
-    ? audioChunks.map((chunk) => chunk.audio_url)
-    : result?.audio_url
-      ? [result.audio_url]
-      : [];
+  const chunksComplete =
+    expectedChunkCount !== null &&
+    expectedChunkCount > 0 &&
+    audioChunks.length >= expectedChunkCount;
+  const playableAudioChunks = useMemo(
+    () => getContiguousAudioChunks(audioChunks),
+    [audioChunks]
+  );
+  const resultAudioChunks = result?.audio_chunks?.length ? result.audio_chunks : [];
+  const useChunkAudio = playableAudioChunks.length > 0 || resultAudioChunks.length > 0;
+  const audioUrls = useMemo(
+    () => {
+      if (playableAudioChunks.length > 0) {
+        return playableAudioChunks.map((chunk) => chunk.audio_url);
+      }
+      if (resultAudioChunks.length > 0) return resultAudioChunks;
+      return result?.audio_url ? [result.audio_url] : [];
+    },
+    [result?.audio_url, resultAudioChunks, playableAudioChunks]
+  );
+  const expectingMoreAudio = useChunkAudio && loading && !chunksComplete;
+  const liveTranscript = useMemo(
+    () =>
+      playableAudioChunks
+        .filter((chunk) => chunk.text)
+        .map((chunk) => chunk.text)
+        .join("\n\n")
+        .trim(),
+    [playableAudioChunks]
+  );
+  const displayTranscript = result?.transcript || liveTranscript;
+  const displaySources = result?.sources?.length ? result.sources : liveSources;
+
   const visibleProgress = Math.round(
     loading && !result ? Math.min(displayProgress, 99) : displayProgress
   );
@@ -345,7 +418,7 @@ export default function Home() {
             )}
 
             {/* Desktop: loading state */}
-            {loading && !result && (
+            {loading && !result && !displayTranscript && displaySources.length === 0 && (
               <div className="hidden lg:flex relative h-full min-h-[60vh] flex-col items-center justify-center overflow-hidden">
                 <HeroGlobeBroadcast
                   variant="centered"
@@ -363,42 +436,44 @@ export default function Home() {
             )}
 
             {/* Result — transcript + sources */}
-            {result && (
+            {(displayTranscript || displaySources.length > 0) && (
               <section className="space-y-6">
                 {/* Transcript panel */}
-                <div>
-                  <div className="flex items-baseline justify-between mb-3">
-                    <h3 className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
-                      Now Playing
-                    </h3>
-                    <span className="text-[9px] text-slate-600 uppercase tracking-wider">
-                      {episodeTitle}
-                    </span>
-                  </div>
-                  <div className="rounded-xl border border-[#222222] bg-[#111111] overflow-hidden">
-                    <div className="px-5 py-4 sm:px-6 sm:py-5">
-                      <TranscriptHighlight
-                        transcript={result.transcript}
-                        currentTime={audioTime.currentTime}
-                        duration={audioTime.duration}
-                      />
+                {displayTranscript && (
+                  <div>
+                    <div className="flex items-baseline justify-between mb-3">
+                      <h3 className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+                        Now Playing
+                      </h3>
+                      <span className="text-[9px] text-slate-600 uppercase tracking-wider">
+                        {episodeTitle}
+                      </span>
+                    </div>
+                    <div className="rounded-xl border border-[#222222] bg-[#111111] overflow-hidden">
+                      <div className="px-5 py-4 sm:px-6 sm:py-5">
+                        <TranscriptHighlight
+                          transcript={displayTranscript}
+                          currentTime={audioTime.currentTime}
+                          duration={audioTime.duration}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
                 {/* Sources */}
-                {result.sources?.length > 0 && (
+                {displaySources.length > 0 && (
                   <div>
                     <h3 className="text-[10px] font-semibold uppercase tracking-widest text-[#555555] mb-3">
                       Sources
                     </h3>
                     <div className="rounded-xl border border-[#222222] bg-[#111111] overflow-hidden">
                       <div className="max-h-56 overflow-y-auto" style={{ scrollbarWidth: "none" }}>
-                        {result.sources.map((source, idx) => (
+                        {displaySources.map((source, idx) => (
                           <div
                             key={idx}
                             className={`group flex items-center justify-between gap-4 px-4 py-3 transition-colors duration-150 hover:bg-[#161616] ${
-                              idx < result.sources.length - 1 ? "border-b border-[#1a1a1a]" : ""
+                              idx < displaySources.length - 1 ? "border-b border-[#1a1a1a]" : ""
                             }`}
                           >
                             <a
@@ -428,11 +503,16 @@ export default function Home() {
           <BriefingPlayerDock
             visible={dockVisible}
             loading={loading}
+            expectingMoreAudio={expectingMoreAudio}
             progress={visibleProgress}
             episodeTitle={episodeTitle}
             audioUrls={audioUrls}
+            estimatedDurationSeconds={estimatedDurationSeconds}
+            autoPlayWhenReady={autoPlayGenerationAudio && audioUrls.length > 0}
             playerId={`briefing-${playerInstanceKey}`}
-            onPlayStateChange={setBriefingAudioPlaying}
+            onPlayStateChange={(playing) => {
+              setBriefingAudioPlaying(playing);
+            }}
             onTimeUpdate={handleTimeUpdate}
             onAudioLevels={setHeroAudioLevels}
             loadingMessage={loadingMessage}

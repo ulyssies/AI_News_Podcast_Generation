@@ -5,9 +5,12 @@ import { AudioPlayer } from "./AudioPlayer";
 type BriefingPlayerDockProps = {
   visible: boolean;
   loading: boolean;
+  expectingMoreAudio?: boolean;
   progress: number;
   episodeTitle: string;
   audioUrls: string[];
+  estimatedDurationSeconds?: number;
+  autoPlayWhenReady?: boolean;
   playerId: string;
   onPlayStateChange?: (playing: boolean) => void;
   onTimeUpdate?: (currentTime: number, duration: number) => void;
@@ -18,9 +21,12 @@ type BriefingPlayerDockProps = {
 export function BriefingPlayerDock({
   visible,
   loading,
+  expectingMoreAudio,
   progress,
   episodeTitle,
   audioUrls,
+  estimatedDurationSeconds,
+  autoPlayWhenReady,
   playerId,
   onPlayStateChange,
   onTimeUpdate,
@@ -61,14 +67,24 @@ export function BriefingPlayerDock({
           </div>
         ) : hasAudio ? (
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide truncate sm:max-w-[10rem] shrink-0 leading-tight">
-              {episodeTitle}
-            </p>
+            <div className="flex shrink-0 items-center justify-between gap-3 sm:block sm:max-w-[10rem]">
+              <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide truncate leading-tight">
+                {episodeTitle}
+              </p>
+              {loading && (
+                <p className="mt-0.5 flex items-center gap-1.5 text-[10px] text-slate-500 tabular-nums sm:mt-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#6366f1] animate-pulse" />
+                  <span>{loadingProgress}%</span>
+                </p>
+              )}
+            </div>
             <div className="flex-1 min-w-0">
               <AudioPlayer
                 key={playerId}
                 sources={audioUrls}
-                expectingMore={loading}
+                expectingMore={expectingMoreAudio ?? loading}
+                estimatedDurationSeconds={estimatedDurationSeconds}
+                autoPlayWhenReady={autoPlayWhenReady ?? loading}
                 id={playerId}
                 aria-label="Briefing playback"
                 compact

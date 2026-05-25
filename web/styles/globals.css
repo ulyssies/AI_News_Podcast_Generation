@@ -254,16 +254,15 @@ body {
 
 .category-cover-title {
   position: absolute;
-  left: clamp(20px, 24cqw, 48px);
-  right: clamp(4px, 5cqw, 24px);
-  top: 64%;
-  transform: translateY(-50%);
-  font-size: clamp(11px, 8.6cqw, 32px);
+  left: 24px;
+  right: 12px;
+  bottom: 30px;
+  margin: 0;
+  max-width: calc(100% - 36px);
+  text-align: left;
+  font-size: 15px;
   line-height: 1.02;
-}
-
-.category-cover-title[data-long-title="true"] {
-  font-size: clamp(8.5px, 7.4cqw, 28px);
+  letter-spacing: 0;
 }
 
 .globe-breath {

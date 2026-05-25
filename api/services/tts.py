@@ -47,6 +47,15 @@ def _client() -> Optional[OpenAI]:
         return _OPENAI_CLIENT
 
 
+def ensure_tts_configured() -> None:
+    """Fail before script generation if the backend cannot possibly synthesize audio."""
+    if not (os.environ.get("OPENAI_API_KEY") or "").strip():
+        raise RuntimeError(
+            "OPENAI_API_KEY is not loaded in the backend process. "
+            "Add it to api/.env or restart the local API after updating the environment."
+        )
+
+
 def _chunk_script(script: str, max_chars: int = TTS_MAX_CHARS) -> List[str]:
     """Split script into chunks at word boundaries so we stay under max_chars per chunk."""
     if not script or not script.strip():
@@ -77,20 +86,21 @@ def _chunk_script(script: str, max_chars: int = TTS_MAX_CHARS) -> List[str]:
 def _synthesize_one_chunk_sync(text: str, voice: str) -> bytes:
     """Call OpenAI TTS for a single chunk; returns raw audio bytes."""
     client = _client()
-    if not client or not (text or "").strip():
-        return b""
-    try:
-        # tts-1 keeps the demo path low-latency; hd variants are noticeably slower.
-        model = (os.environ.get("OPENAI_TTS_MODEL") or "tts-1").strip() or "tts-1"
-        resp = client.audio.speech.create(
-            model=model,
-            voice=voice,
-            input=text.strip(),
+    if not client:
+        raise RuntimeError(
+            "OPENAI_API_KEY is not loaded in the backend process. "
+            "Add it to api/.env or restart the local API after updating the environment."
         )
-        return resp.content or b""
-    except Exception as e:
-        logger.warning("TTS chunk failed: %s", e, exc_info=True)
+    if not (text or "").strip():
         return b""
+    # tts-1 keeps the demo path low-latency; hd variants are noticeably slower.
+    model = (os.environ.get("OPENAI_TTS_MODEL") or "tts-1").strip() or "tts-1"
+    resp = client.audio.speech.create(
+        model=model,
+        voice=voice,
+        input=text.strip(),
+    )
+    return resp.content or b""
 
 
 def get_chunks(script: str, max_chars: int = TTS_MAX_CHARS) -> List[str]:
@@ -98,24 +108,40 @@ def get_chunks(script: str, max_chars: int = TTS_MAX_CHARS) -> List[str]:
     return _chunk_script(script, max_chars)
 
 
-async def synthesize_one_chunk(chunk: str, voice: Optional[str] = None) -> bytes:
-    """Synthesize a single chunk in a thread; used by pipeline for per-chunk progress."""
+async def synthesize_one_chunk_result(chunk: str, voice: Optional[str] = None) -> tuple[bytes, Optional[str]]:
+    """Synthesize one chunk, returning an error string instead of hiding failures."""
     voice = _normalize_voice(voice)
     loop = asyncio.get_event_loop()
     try:
-        return await asyncio.wait_for(
+        audio = await asyncio.wait_for(
             loop.run_in_executor(
                 _TTS_EXECUTOR, lambda: _synthesize_one_chunk_sync(chunk, voice)
             ),
             timeout=TTS_REQUEST_TIMEOUT,
         )
+        return audio, None
     except asyncio.TimeoutError:
-        logger.warning(
-            "TTS chunk timed out after %.0fs (chunk length %d chars); skipping.",
-            TTS_REQUEST_TIMEOUT,
-            len(chunk or ""),
+        message = (
+            "TTS chunk timed out after "
+            f"{TTS_REQUEST_TIMEOUT:.0f}s (chunk length {len(chunk or '')} chars)."
         )
-        return b""
+        logger.warning(message)
+        return b"", message
+    except Exception as e:
+        logger.warning("TTS chunk failed: %s", e, exc_info=True)
+        return b"", str(e) or type(e).__name__
+
+
+async def synthesize_one_chunk(chunk: str, voice: Optional[str] = None) -> bytes:
+    """Synthesize a single chunk in a thread; used by legacy paths."""
+    audio, error = await synthesize_one_chunk_result(chunk, voice)
+    if error:
+        logger.warning(
+            "TTS chunk returned no audio (chunk length %d chars): %s",
+            len(chunk or ""),
+            error,
+        )
+    return audio
 
 
 def _normalize_voice(voice: Optional[str]) -> str:

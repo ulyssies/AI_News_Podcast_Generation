@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef } from "react";
 
 type HeroGlobeBroadcastProps = {
   /** "bleed" (default): globe positioned right, bleeds off the card edge.
@@ -17,7 +17,7 @@ const IDLE_SPIN_PERIOD_SEC = 24;
 const ACTIVE_SPIN_PERIOD_SEC = 16;
 const ACTIVE_SPIN_ACCELERATION_SEC = 9;
 const MIN_ACTIVE_SPIN_PERIOD_SEC = 6;
-const FRAME_INTERVAL_SEC = 1 / 42;
+const FRAME_INTERVAL_SEC = 1 / 30;
 const R = 292; // large sphere; ~584px diameter in viewBox space
 
 function rotateTilt(
@@ -43,7 +43,7 @@ function project(phi: number, lam: number, spin: number): { x: number; y: number
 const Z_CLIP = -0.08; // hide deep back-facing (in unit sphere before scale, use z/R)
 
 function meridianToPath(lam: number, spin: number): string {
-  const n = 80;
+  const n = 56;
   let d = "";
   let pen = false;
   for (let i = 0; i <= n; i++) {
@@ -66,7 +66,7 @@ function meridianToPath(lam: number, spin: number): string {
 }
 
 function parallelToPath(phi: number, spin: number): string {
-  const n = 96;
+  const n = 72;
   let d = "";
   let pen = false;
   for (let i = 0; i <= n; i++) {
@@ -97,7 +97,9 @@ export function HeroGlobeBroadcast({
   const rafRef = useRef<number>(0);
   const activityRef = useRef(activity);
   const progressRef = useRef(progress);
-  const [, tick] = useState(0);
+  const parallelPathRefs = useRef<Array<SVGPathElement | null>>([]);
+  const meridianPathRefs = useRef<Array<SVGPathElement | null>>([]);
+  const scanPathRef = useRef<SVGPathElement | null>(null);
 
   useEffect(() => {
     activityRef.current = activity;
@@ -110,6 +112,22 @@ export function HeroGlobeBroadcast({
   useEffect(() => {
     const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (prefersReducedMotion) return;
+
+    const writeGlobePaths = (spin: number) => {
+      PARALLELS_DEG.forEach((deg, index) => {
+        parallelPathRefs.current[index]?.setAttribute("d", parallelToPath(deg * DEG, spin));
+      });
+
+      for (let index = 0; index < MERIDIANS_COUNT; index++) {
+        const lam = (2 * Math.PI * index) / MERIDIANS_COUNT;
+        meridianPathRefs.current[index]?.setAttribute("d", meridianToPath(lam, spin));
+      }
+
+      const scanPhi = Math.sin(spin * 0.72) * 28 * DEG;
+      scanPathRef.current?.setAttribute("d", parallelToPath(scanPhi, spin * 0.35));
+    };
+
+    writeGlobePaths(spinRef.current);
 
     let last = performance.now();
     let acc = 0;
@@ -129,7 +147,7 @@ export function HeroGlobeBroadcast({
       acc += dt;
       if (acc >= FRAME_INTERVAL_SEC) {
         acc = 0;
-        tick((n) => (n + 1) % 10000);
+        writeGlobePaths(spinRef.current);
       }
       rafRef.current = requestAnimationFrame(loop);
     };
@@ -157,7 +175,6 @@ export function HeroGlobeBroadcast({
   const scanPhi = Math.sin(spin * 0.72) * 28 * DEG;
   const scanPath = parallelToPath(scanPhi, spin * 0.35);
 
-  const glowId = `globe-glow-${uid}`;
   const softId = `globe-soft-${uid}`;
   const scanId = `globe-scan-${uid}`;
   const surfaceId = `globe-surface-${uid}`;
@@ -197,13 +214,6 @@ export function HeroGlobeBroadcast({
           xmlns="http://www.w3.org/2000/svg"
         >
           <defs>
-            <filter id={glowId} x="-40%" y="-40%" width="180%" height="180%">
-              <feGaussianBlur stdDeviation="1.2" result="b" />
-              <feMerge>
-                <feMergeNode in="b" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
             <filter id={softId} x="-20%" y="-20%" width="140%" height="140%">
               <feGaussianBlur stdDeviation="0.6" result="blur" />
               <feMerge>
@@ -285,6 +295,9 @@ export function HeroGlobeBroadcast({
               d ? (
                 <path
                   key={`p-${i}`}
+                  ref={(node) => {
+                    parallelPathRefs.current[i] = node;
+                  }}
                   d={d}
                   stroke={
                     equator
@@ -294,7 +307,7 @@ export function HeroGlobeBroadcast({
                   strokeWidth={equator ? 1.25 : 0.7}
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  filter={`url(#${glowId})`}
+                  filter={equator ? `url(#${softId})` : undefined}
                 />
               ) : null
             )}
@@ -303,12 +316,14 @@ export function HeroGlobeBroadcast({
               d ? (
                 <path
                   key={`m-${i}`}
+                  ref={(node) => {
+                    meridianPathRefs.current[i] = node;
+                  }}
                   d={d}
                   stroke="rgba(196, 214, 255, 0.34)"
                   strokeWidth={0.7}
                   strokeLinecap="round"
                   strokeLinejoin="round"
-                  filter={`url(#${glowId})`}
                 />
               ) : null
             )}
@@ -316,12 +331,13 @@ export function HeroGlobeBroadcast({
 
           {scanPath && (
             <path
+              ref={scanPathRef}
               d={scanPath}
               stroke={`url(#${scanId})`}
               strokeWidth={activity === "active" ? 1.4 : 1.1}
               strokeLinecap="round"
               strokeLinejoin="round"
-              filter={`url(#${glowId})`}
+              filter={`url(#${softId})`}
               mask={`url(#${edgeMaskId})`}
               className="globe-scan-line"
             />

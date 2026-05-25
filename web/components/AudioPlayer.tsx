@@ -11,6 +11,10 @@ export interface AudioPlayerProps {
   sources?: string[];
   /** True while more progressive chunks may still arrive. */
   expectingMore?: boolean;
+  /** Estimated whole-episode duration used until every streamed chunk reports metadata. */
+  estimatedDurationSeconds?: number;
+  /** Try to start playback as soon as the first source is available. */
+  autoPlayWhenReady?: boolean;
   /** Unique id for this clip (used for global single-playback). */
   id: string;
   /** Optional label for accessibility. */
@@ -58,6 +62,8 @@ export function AudioPlayer({
   src,
   sources,
   expectingMore = false,
+  estimatedDurationSeconds,
+  autoPlayWhenReady = false,
   id,
   "aria-label": ariaLabel,
   className = "",
@@ -71,8 +77,12 @@ export function AudioPlayer({
     [sources, src]
   );
   const [trackIndex, setTrackIndex] = useState(0);
+  const [chunkDurations, setChunkDurations] = useState<number[]>([]);
   const resumeNextRef = useRef(false);
   const waitingForNextRef = useRef(false);
+  const pendingSeekRef = useRef<number | null>(null);
+  const autoPlayAttemptedRef = useRef(false);
+  const manuallyPausedRef = useRef(false);
   const currentSrc = playlist[Math.min(trackIndex, Math.max(0, playlist.length - 1))] ?? "";
 
   useEffect(() => {
@@ -84,18 +94,28 @@ export function AudioPlayer({
 
   useEffect(() => {
     setTrackIndex(0);
+    setChunkDurations([]);
     resumeNextRef.current = false;
     waitingForNextRef.current = false;
+    pendingSeekRef.current = null;
+    autoPlayAttemptedRef.current = false;
+    manuallyPausedRef.current = false;
   }, [id]);
+
+  useEffect(() => {
+    if (!manuallyPausedRef.current) {
+      autoPlayAttemptedRef.current = false;
+    }
+  }, [currentSrc]);
 
   const {
     audioRef,
     playing,
     currentTime,
     duration,
-    progress,
     play,
     pause,
+    ready,
   } = useAudioPlayer(currentSrc, {
     id,
     onEnded: () => {
@@ -119,9 +139,21 @@ export function AudioPlayer({
   const onAudioLevelsRef = useRef(onAudioLevels);
   onAudioLevelsRef.current = onAudioLevels;
 
+  const resetAnalyser = () => {
+    sourceRef.current?.disconnect();
+    analyserRef.current?.disconnect();
+    sourceRef.current = null;
+    analyserRef.current = null;
+    frequencyDataRef.current = null;
+    audioContextRef.current = null;
+  };
+
   const ensureAnalyser = () => {
     const el = audioRef.current;
     if (!el || typeof window === "undefined") return null;
+    if (audioContextRef.current?.state === "closed") {
+      resetAnalyser();
+    }
     if (audioContextRef.current && analyserRef.current) {
       return { context: audioContextRef.current, analyser: analyserRef.current };
     }
@@ -145,8 +177,17 @@ export function AudioPlayer({
       frequencyDataRef.current = new Uint8Array(analyser.frequencyBinCount);
       return { context, analyser };
     } catch {
+      resetAnalyser();
       return null;
     }
+  };
+
+  const resumeAnalyser = () => {
+    const setup = ensureAnalyser();
+    if (!setup || setup.context.state === "closed") return;
+    setup.context.resume().catch(() => {
+      resetAnalyser();
+    });
   };
 
   useEffect(() => {
@@ -156,19 +197,111 @@ export function AudioPlayer({
   // Use a ref so the effect only re-runs when time changes, not when parent re-renders.
   const onTimeUpdateRef = useRef(onTimeUpdate);
   onTimeUpdateRef.current = onTimeUpdate;
+
   useEffect(() => {
-    onTimeUpdateRef.current?.(currentTime, duration);
-  }, [currentTime, duration]);
+    setChunkDurations((prev) => {
+      if (playlist.length === 0) return [];
+      const next = Array.from({ length: playlist.length }, (_, i) => prev[i] ?? 0);
+      if (duration > 0 && Number.isFinite(duration)) {
+        next[trackIndex] = duration;
+      }
+      return next;
+    });
+  }, [duration, playlist.length, trackIndex]);
+
+  useEffect(() => {
+    if (playlist.length === 0) {
+      setChunkDurations([]);
+      return;
+    }
+
+    let cancelled = false;
+    const pendingAudios: HTMLAudioElement[] = [];
+
+    playlist.forEach((source, index) => {
+      if (!source || chunkDurations[index] > 0) return;
+      const probe = new Audio();
+      pendingAudios.push(probe);
+      probe.preload = "metadata";
+      probe.src = source;
+
+      const recordDuration = () => {
+        if (cancelled) return;
+        const nextDuration = probe.duration;
+        if (!Number.isFinite(nextDuration) || nextDuration <= 0) return;
+        setChunkDurations((prev) => {
+          const next = Array.from({ length: playlist.length }, (_, i) => prev[i] ?? 0);
+          next[index] = nextDuration;
+          return next;
+        });
+      };
+
+      probe.addEventListener("loadedmetadata", recordDuration, { once: true });
+      probe.addEventListener("durationchange", recordDuration, { once: true });
+      probe.load();
+    });
+
+    return () => {
+      cancelled = true;
+      pendingAudios.forEach((probe) => {
+        probe.removeAttribute("src");
+        probe.load();
+      });
+    };
+  }, [chunkDurations, playlist]);
+
+  const knownDurations = useMemo(
+    () =>
+      playlist.map((_, i) => {
+        if (i === trackIndex && duration > 0 && Number.isFinite(duration)) return duration;
+        const measured = chunkDurations[i] ?? 0;
+        return Number.isFinite(measured) && measured > 0 ? measured : 0;
+      }),
+    [chunkDurations, duration, playlist, trackIndex]
+  );
+  const elapsedBeforeTrack = knownDurations
+    .slice(0, trackIndex)
+    .reduce((sum, next) => sum + next, 0);
+  const loadedDuration = knownDurations.reduce((sum, next) => sum + next, 0);
+  const episodeCurrentTime = Math.min(
+    Math.max(0, elapsedBeforeTrack + currentTime),
+    Math.max(loadedDuration, elapsedBeforeTrack + currentTime)
+  );
+  const measuredAllChunks =
+    playlist.length > 0 && knownDurations.every((chunkDuration) => chunkDuration > 0);
+  const estimatedTotal =
+    estimatedDurationSeconds && Number.isFinite(estimatedDurationSeconds)
+      ? estimatedDurationSeconds
+      : 0;
+  const episodeDuration =
+    expectingMore || !measuredAllChunks
+      ? Math.max(estimatedTotal, loadedDuration, episodeCurrentTime)
+      : Math.max(loadedDuration, episodeCurrentTime);
+  const episodeProgress =
+    episodeDuration > 0 ? Math.min(1, episodeCurrentTime / episodeDuration) : 0;
+  const bufferedProgress =
+    episodeDuration > 0 ? Math.min(1, loadedDuration / episodeDuration) : 0;
+
+  useEffect(() => {
+    onTimeUpdateRef.current?.(episodeCurrentTime, episodeDuration);
+  }, [episodeCurrentTime, episodeDuration]);
 
   const handlePlayToggle = () => {
     if (playing) {
+      manuallyPausedRef.current = true;
       pause();
       return;
     }
-    const setup = ensureAnalyser();
-    void setup?.context.resume();
+    manuallyPausedRef.current = false;
     play();
   };
+
+  useEffect(() => {
+    if (!autoPlayWhenReady || !currentSrc || playing) return;
+    if (autoPlayAttemptedRef.current || manuallyPausedRef.current) return;
+    autoPlayAttemptedRef.current = true;
+    window.setTimeout(() => play(), 0);
+  }, [autoPlayWhenReady, currentSrc, play, playing]);
 
   useEffect(() => {
     if (!waitingForNextRef.current) return;
@@ -181,18 +314,60 @@ export function AudioPlayer({
   useEffect(() => {
     if (!resumeNextRef.current || !currentSrc) return;
     resumeNextRef.current = false;
-    const setup = ensureAnalyser();
-    void setup?.context.resume();
     window.setTimeout(() => play(), 0);
   }, [currentSrc, play]);
 
+  useEffect(() => {
+    const pendingSeek = pendingSeekRef.current;
+    const el = audioRef.current;
+    if (pendingSeek === null || !el) return;
+
+    const applySeek = () => {
+      const trackDuration = Number.isFinite(el.duration) && el.duration > 0 ? el.duration : pendingSeek;
+      el.currentTime = Math.max(0, Math.min(pendingSeek, Math.max(0, trackDuration - 0.05)));
+      pendingSeekRef.current = null;
+    };
+
+    if (ready || el.readyState >= 1) {
+      applySeek();
+      return;
+    }
+
+    el.addEventListener("loadedmetadata", applySeek, { once: true });
+    return () => el.removeEventListener("loadedmetadata", applySeek);
+  }, [currentSrc, ready]);
+
   const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
     const el = audioRef.current;
-    if (!el || duration <= 0) return;
+    if (!el || episodeDuration <= 0 || loadedDuration <= 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const p = Math.max(0, Math.min(1, x / rect.width));
-    el.currentTime = p * duration;
+    const requestedEpisodeTime = p * episodeDuration;
+    const targetEpisodeTime = Math.min(requestedEpisodeTime, Math.max(0, loadedDuration - 0.05));
+
+    let elapsed = 0;
+    let nextTrackIndex = 0;
+    let nextTrackOffset = 0;
+    for (let i = 0; i < knownDurations.length; i += 1) {
+      const chunkDuration = knownDurations[i] || 0;
+      const nextElapsed = elapsed + chunkDuration;
+      if (targetEpisodeTime <= nextElapsed || i === knownDurations.length - 1) {
+        nextTrackIndex = i;
+        nextTrackOffset = Math.max(0, targetEpisodeTime - elapsed);
+        break;
+      }
+      elapsed = nextElapsed;
+    }
+
+    pendingSeekRef.current = nextTrackOffset;
+    if (nextTrackIndex === trackIndex) {
+      const trackDuration = knownDurations[trackIndex] || duration || nextTrackOffset;
+      el.currentTime = Math.max(0, Math.min(nextTrackOffset, Math.max(0, trackDuration - 0.05)));
+      pendingSeekRef.current = null;
+    } else {
+      setTrackIndex(nextTrackIndex);
+    }
   };
 
   useEffect(() => {
@@ -210,7 +385,7 @@ export function AudioPlayer({
     const setup = ensureAnalyser();
     const frequencyData = frequencyDataRef.current;
     if (!setup || !frequencyData) return;
-    void setup.context.resume();
+    resumeAnalyser();
 
     const tick = (time: number) => {
       const analyser = analyserRef.current;
@@ -240,9 +415,8 @@ export function AudioPlayer({
   useEffect(
     () => () => {
       if (levelFrameRef.current !== null) cancelAnimationFrame(levelFrameRef.current);
-      sourceRef.current?.disconnect();
-      analyserRef.current?.disconnect();
       void audioContextRef.current?.close();
+      resetAnalyser();
     },
     []
   );
@@ -278,22 +452,26 @@ export function AudioPlayer({
               compact ? "text-[10px]" : "text-xs w-8"
             }`}
           >
-            {formatTime(currentTime)}
+            {formatTime(episodeCurrentTime)}
           </span>
           <div
-            className={`flex-1 rounded-full bg-[#222222] cursor-pointer overflow-hidden group ${
+            className={`relative flex-1 rounded-full bg-[#222222] cursor-pointer overflow-hidden group ${
               compact ? "h-1.5" : "h-2"
             }`}
             onClick={handleSeek}
             role="progressbar"
-            aria-valuenow={progress * 100}
+            aria-valuenow={episodeProgress * 100}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-label="Playback progress"
           >
             <div
-              className="h-full rounded-full bg-[#6366f1] transition-all duration-75 ease-linear group-hover:bg-[#7c7ff5]"
-              style={{ width: `${progress * 100}%` }}
+              className="absolute inset-y-0 left-0 rounded-full bg-white/10 transition-all duration-300 ease-out"
+              style={{ width: `${bufferedProgress * 100}%` }}
+            />
+            <div
+              className="relative h-full rounded-full bg-[#6366f1] transition-all duration-75 ease-linear group-hover:bg-[#7c7ff5]"
+              style={{ width: `${episodeProgress * 100}%` }}
             />
           </div>
           <span
@@ -301,7 +479,7 @@ export function AudioPlayer({
               compact ? "text-[10px]" : "text-xs w-8"
             }`}
           >
-            {formatTime(duration)}
+            {formatTime(episodeDuration)}
           </span>
         </div>
       </div>

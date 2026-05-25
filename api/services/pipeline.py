@@ -14,7 +14,13 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 from api.models import GenerateEpisodeResponse, EpisodeSource
 from api.services.news import fetch_full_daily_briefing_articles, fetch_news_for_category_key
 from api.services.script import stream_podcast_script, generate_podcast_script
-from api.services.tts import TTS_MAX_CHARS, synthesize_one_chunk, bytes_to_data_url
+from api.services.tts import (
+    TTS_MAX_CHARS,
+    bytes_to_data_url,
+    ensure_tts_configured,
+    synthesize_one_chunk,
+    synthesize_one_chunk_result,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -110,35 +116,45 @@ async def generate_episode_stream(
         "response_bytes": None,
     }
 
+    ensure_tts_configured()
+
     yield 10, "Fetching news…", None
     articles, topic_display = await _gather_articles(briefing_mode, category, length)
     metrics["news_fetch_ms"] = int((time.perf_counter() - started_at) * 1000)
+    yield 16, "Sources ready…", {
+        "event": "sources",
+        "sources": [source.model_dump(mode="json") for source in _build_sources(articles)],
+    }
     yield 18, "Generating script…", None
 
     transcript_parts: List[str] = []
     event_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
     tts_tasks: List[asyncio.Task] = []
     audio_by_index: Dict[int, bytes] = {}
+    tts_errors: List[str] = []
     tts_chunks_started = 0
 
     def fire_tts_chunk(chunk_text: str) -> None:
         nonlocal tts_chunks_started
         index = tts_chunks_started
         tts_chunks_started += 1
-        task = asyncio.create_task(synthesize_one_chunk(chunk_text))
+        task = asyncio.create_task(synthesize_one_chunk_result(chunk_text))
         tts_tasks.append(task)
 
         def on_done(done_task: asyncio.Task, chunk_index: int = index) -> None:
             try:
-                part = done_task.result()
+                part, error = done_task.result()
             except Exception as exc:
                 logger.warning("TTS chunk %d failed: %s", chunk_index, exc, exc_info=True)
                 part = b""
+                error = str(exc) or type(exc).__name__
             event_queue.put_nowait(
                 {
                     "type": "audio_chunk",
                     "index": chunk_index,
                     "audio": part,
+                    "error": error,
+                    "text": chunk_text,
                     "chars": len(chunk_text),
                 }
             )
@@ -199,6 +215,7 @@ async def generate_episode_stream(
         elif kind == "audio_chunk":
             index = int(event["index"])
             part = event.get("audio") or b""
+            error = str(event.get("error") or "")
             if part:
                 audio_by_index[index] = part
                 if metrics["first_tts_done_ms"] is None:
@@ -210,8 +227,11 @@ async def generate_episode_stream(
                     "event": "audio_chunk",
                     "index": index,
                     "audio_url": bytes_to_data_url(part),
+                    "text": str(event.get("text") or ""),
                     "chars": int(event.get("chars") or 0),
                 }
+            elif error:
+                tts_errors.append(error)
         elif kind == "producer_done":
             break
         elif kind == "error":
@@ -225,20 +245,21 @@ async def generate_episode_stream(
     audio_parts = [audio_by_index[i] for i in sorted(audio_by_index)]
 
     if not audio_parts:
+        detail = tts_errors[0] if tts_errors else "No TTS chunks returned audio."
         raise RuntimeError(
-            "TTS produced no audio. Check your OPENAI_API_KEY and TTS configuration."
+            f"TTS produced no audio: {detail}"
         )
 
-    audio_bytes = b"".join(audio_parts)
-    base64_started = time.perf_counter()
-    audio_url = bytes_to_data_url(audio_bytes)
-    metrics["base64_ms"] = int((time.perf_counter() - base64_started) * 1000)
+    audio_chunk_urls = [bytes_to_data_url(part) for part in audio_parts]
+    metrics["base64_ms"] = 0
     yield 90, "Finalizing…", None
 
     response = GenerateEpisodeResponse(
-        audio_url=audio_url,
+        audio_url="",
         transcript=transcript,
         sources=_build_sources(articles),
+        total_chunks=len(audio_parts),
+        audio_chunks=audio_chunk_urls,
     )
     response_payload = response.model_dump(mode="json")
     metrics["response_bytes"] = len(str(response_payload).encode("utf-8"))
@@ -267,6 +288,7 @@ async def generate_episode(
     briefing_mode: str = "category",
     category: Optional[str] = None,
 ) -> Dict[str, Any]:
+    ensure_tts_configured()
     articles, topic_display = await _gather_articles(briefing_mode, category, length)
     transcript = await generate_podcast_script(
         topic=topic_display,
@@ -279,10 +301,13 @@ async def generate_episode(
     chunks = get_chunks(transcript)
     results = await asyncio.gather(*[synthesize_one_chunk(c, voice=None) for c in chunks])
     audio_bytes = b"".join(part for part in results if part)
+    audio_chunk_urls = [bytes_to_data_url(part) for part in results if part]
     audio_url = bytes_to_data_url(audio_bytes)
     response = GenerateEpisodeResponse(
         audio_url=audio_url,
         transcript=transcript,
         sources=_build_sources(articles),
+        total_chunks=len([part for part in results if part]),
+        audio_chunks=audio_chunk_urls,
     )
     return response.model_dump(mode="json")

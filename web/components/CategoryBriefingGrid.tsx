@@ -58,7 +58,6 @@ export function CategoryBriefingGrid({
 
               <p
                 className="category-cover-title z-10 font-sans font-extrabold text-white tracking-normal drop-shadow-[0_2px_10px_rgba(0,0,0,0.72)]"
-                data-long-title={cat.label.length > 12 ? "true" : undefined}
               >
                 {cat.label}
               </p>

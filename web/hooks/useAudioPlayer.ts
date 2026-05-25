@@ -67,8 +67,7 @@ export function useAudioPlayer(
   }, []);
 
   const resume = useCallback(() => {
-    audioRef.current?.play();
-    setPlaying(true);
+    audioRef.current?.play().catch(() => setPlaying(false));
   }, []);
 
   const play = useCallback(() => {
@@ -86,13 +85,18 @@ export function useAudioPlayer(
     };
 
     requestPlay(id, stopOthers);
-    el.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+    el.play().catch(() => setPlaying(false));
   }, [id, src]);
 
   useEffect(() => {
+    const el = audioRef.current;
     setCurrentTime(0);
     setDuration(0);
     setReady(false);
+    setPlaying(false);
+    if (el && src) {
+      el.load();
+    }
   }, [src]);
 
   useEffect(() => {
@@ -105,8 +109,24 @@ export function useAudioPlayer(
       setReady(true);
     };
     const onDurationChange = () => setDuration(el.duration);
-    const onPlay = () => setPlaying(true);
+    const onPlaying = () => {
+      setPlaying(true);
+      setReady(true);
+    };
     const onPause = () => setPlaying(false);
+    const onWaiting = () => {
+      setReady(false);
+      if (el.currentTime < 0.05) setPlaying(false);
+    };
+    const onCanPlay = () => setReady(true);
+    const onStalled = () => {
+      setReady(false);
+      if (el.currentTime < 0.05) setPlaying(false);
+    };
+    const onError = () => {
+      setPlaying(false);
+      setReady(false);
+    };
     const onEnded = () => {
       setPlaying(false);
       setCurrentTime(0);
@@ -117,16 +137,24 @@ export function useAudioPlayer(
     el.addEventListener("timeupdate", onTimeUpdate);
     el.addEventListener("loadedmetadata", onLoadedMetadata);
     el.addEventListener("durationchange", onDurationChange);
-    el.addEventListener("play", onPlay);
+    el.addEventListener("playing", onPlaying);
     el.addEventListener("pause", onPause);
+    el.addEventListener("waiting", onWaiting);
+    el.addEventListener("canplay", onCanPlay);
+    el.addEventListener("stalled", onStalled);
+    el.addEventListener("error", onError);
     el.addEventListener("ended", onEnded);
 
     return () => {
       el.removeEventListener("timeupdate", onTimeUpdate);
       el.removeEventListener("loadedmetadata", onLoadedMetadata);
       el.removeEventListener("durationchange", onDurationChange);
-      el.removeEventListener("play", onPlay);
+      el.removeEventListener("playing", onPlaying);
       el.removeEventListener("pause", onPause);
+      el.removeEventListener("waiting", onWaiting);
+      el.removeEventListener("canplay", onCanPlay);
+      el.removeEventListener("stalled", onStalled);
+      el.removeEventListener("error", onError);
       el.removeEventListener("ended", onEnded);
       release(id);
     };

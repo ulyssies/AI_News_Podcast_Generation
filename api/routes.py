@@ -114,7 +114,6 @@ async def generate_stream_endpoint(payload: GenerateRequest):
     _inflight_episode_results[key] = result_future
 
     async def event_stream():
-        sent_audio_chunks = False
         # Flush a 1% event immediately so any buffering proxy releases the connection.
         # Without this, the first real event (10%) may be held in nginx's buffer for
         # 20-30 s until enough bytes accumulate to trigger an automatic flush.
@@ -127,20 +126,16 @@ async def generate_stream_endpoint(payload: GenerateRequest):
             ):
                 if result is not None:
                     if result.get("event") == "audio_chunk":
-                        sent_audio_chunks = True
                         yield f"data: {json.dumps({'percent': percent, 'message': message, 'audio_chunk': result})}\n\n"
+                    elif result.get("event") == "sources":
+                        yield f"data: {json.dumps({'percent': percent, 'message': message, 'sources': result.get('sources', [])})}\n\n"
                     else:
                         while len(_episode_cache) >= MAX_EPISODE_CACHE:
                             _episode_cache.pop(next(iter(_episode_cache)))
                         _episode_cache[key] = result
                         if not result_future.done():
                             result_future.set_result(result)
-                        result_for_client = dict(result)
-                        if sent_audio_chunks:
-                            # Live clients already received playable chunks; don't send the
-                            # full base64 MP3 again in the final metadata event.
-                            result_for_client["audio_url"] = ""
-                        yield f"data: {json.dumps({'percent': percent, 'result': result_for_client})}\n\n"
+                        yield f"data: {json.dumps({'percent': percent, 'result': result})}\n\n"
                 else:
                     yield f"data: {json.dumps({'percent': percent, 'message': message})}\n\n"
         except Exception as e:
