@@ -21,7 +21,7 @@
 A curated daily audio briefing app for people who want to stay informed without sitting through fluff or biased takes. Pick a category, hit play, and get a clean factual podcast-style episode — like the front page of a newspaper, read to you.
 
 ```
-Category select → News fetch → Claude script generation → OpenAI TTS → Audio player + transcript
+Category select → News fetch → Claude script generation → chunked OpenAI TTS → progressive player + transcript + sources
 ```
 
 ---
@@ -32,11 +32,12 @@ Category select → News fetch → Claude script generation → OpenAI TTS → A
 |---|---|
 | **Today's Full Briefing** | One cohesive episode covering all 8 categories in order — the main experience |
 | **Category Deep Dives** | 8 curated categories, each with tailored news queries for relevant results |
-| **Episode length** | Short (~5 min), medium (~15 min), or long (~30 min) |
-| **Streaming generation** | Real-time progress via SSE — see percentage updates as the episode is built |
-| **Sticky audio player** | Persistent bottom bar player — play/pause, seek, progress bar. Fixed on mobile, pinned to the right column on desktop |
-| **Transcript & sources** | Full scrollable transcript with source links for every article used |
-| **Animated globe** | Idle-state SVG globe in the right panel; disappears once a briefing loads |
+| **Episode length** | Short (~5 min), medium (~15 min), or long (~30 min). Short is the default for the full briefing |
+| **Streaming generation** | Real-time progress via SSE, early source links, and audio chunks as TTS segments finish |
+| **Progressive playback** | The player starts from chunk `0` and only exposes contiguous chunks, so later chunks cannot play before earlier chunks arrive |
+| **Sticky audio player** | Persistent bottom bar player with play/pause, seek, estimated total duration, loaded duration, and live progress |
+| **Transcript & sources** | Transcript and sources populate progressively while the episode is still generating |
+| **Animated globe** | Shaded wireframe globe in the right panel; it stays lightweight and reacts to loading/playback state |
 | **Split desktop layout** | Sticky left sidebar (hero + category grid) alongside a scrollable right content column |
 | **Responsive mobile layout** | Two-column top row (hero left, category grid right) stacking to full-width below |
 | **First-visit info modal** | Explains how the app works — shown once, dismissible, stored in localStorage |
@@ -64,10 +65,10 @@ Category select → News fetch → Claude script generation → OpenAI TTS → A
 ## How it works
 
 1. **News fetch** — each category maps to tailored search queries via NewsAPI (or Google News RSS fallback). The Full Briefing pulls from all 8 categories and merges/deduplicates articles.
-2. **Script generation** — Anthropic's Claude generates a broadcast-style script from the fetched articles, instructed to write in a neutral, factual journalist tone with no opinion or political framing.
-3. **TTS** — OpenAI TTS converts the script to audio.
-4. **Streaming** — progress events are streamed via SSE so the UI can show live percentage updates without blocking.
-5. **Playback** — the frontend serves a sticky audio player with live transcript highlighting and source links.
+2. **Script generation** — Anthropic's Claude streams a broadcast-style script from the fetched articles, leading with fresh/high-impact items and avoiding ceremonial filler.
+3. **TTS** — OpenAI TTS starts as soon as sentence-safe chunks are ready, so audio synthesis overlaps with script generation.
+4. **Streaming** — `/generate/stream` sends progress, early `sources`, live `audio_chunk` events, and a final payload with `total_chunks` plus `audio_chunks`.
+5. **Playback** — the frontend plays a contiguous chunk playlist, updates transcript/source sections as data arrives, and falls back to legacy full-audio responses only when no chunk list is available.
 
 ---
 
@@ -81,22 +82,27 @@ Category select → News fetch → Claude script generation → OpenAI TTS → A
 │   ├── .env.example
 │   └── services/
 │       ├── news.py                # Category queries, full briefing fetch, politics balancing
-│       ├── script.py              # Claude API script generation
-│       ├── tts.py                 # OpenAI TTS
-│       ├── pipeline.py            # Orchestration, streaming support
+│       ├── script.py              # Claude/OpenAI script generation prompts
+│       ├── tts.py                 # OpenAI TTS chunking and reusable client
+│       ├── pipeline.py            # Orchestration, SSE progress, source/audio chunk streaming
 │       └── trending.py            # Trending topics via RSS
 ├── web/
 │   ├── pages/
-│   │   └── index.tsx              # Main UI — split layout, state management, SSE client
+│   │   └── index.tsx              # Main UI, state management, SSE client, progressive chunks
 │   ├── components/
-│   │   ├── BriefingPlayerDock.tsx # Audio player — fixed mobile, pinned desktop
-│   │   ├── CategoryBriefingGrid.tsx # 8 category cards grid (compact + full modes)
+│   │   ├── AudioPlayer.tsx        # Chunk playlist audio player
+│   │   ├── BriefingPlayerDock.tsx # Bottom dock for loading/progressive playback
+│   │   ├── CategoryBriefingGrid.tsx # 8 category cover-art card grid
 │   │   ├── DailyBriefingHero.tsx  # Full briefing hero card with length picker
-│   │   ├── HeroGlobeBroadcast.tsx # Animated SVG globe for idle desktop state
+│   │   ├── HeroGlobeBroadcast.tsx # Lightweight animated globe for desktop state
 │   │   ├── InfoModal.tsx          # First-visit info modal
 │   │   └── TranscriptHighlight.tsx # Scrollable transcript with playback position
+│   ├── hooks/
+│   │   └── useAudioPlayer.ts      # Native audio events and playback state
 │   ├── lib/
-│   │   └── categories.ts          # Category definitions, icons, and card gradient tokens
+│   │   └── categories.ts          # Category definitions and cover art metadata
+│   ├── public/
+│   │   └── category-covers/       # Static generated Go deeper cover art
 │   └── styles/
 │       └── globals.css            # Tailwind v4 theme + mobile layout media query
 └── SECRETS.md
@@ -153,7 +159,7 @@ Add these to `api/.env`. **Never commit this file** — see `SECRETS.md` and `.g
 | Method | Endpoint | Rate Limited | Description |
 |---|---|---|---|
 | `POST` | `/generate` | ✅ 5/day per IP | Generate an episode, returns full result when complete |
-| `POST` | `/generate/stream` | ❌ | Generate an episode with real-time progress via SSE |
+| `POST` | `/generate/stream` | ❌ | Generate an episode with real-time progress, sources, and audio chunks via SSE |
 | `GET` | `/trending-topics` | ❌ | Returns trending topic labels from recent headlines |
 
 ### Request body for `/generate` and `/generate/stream`
@@ -174,6 +180,18 @@ Add these to `api/.env`. **Never commit this file** — see `SECRETS.md` and `.g
 
 Full interactive docs available at `http://localhost:8000/docs` when the API is running.
 
+### Streaming events
+
+`/generate/stream` emits Server-Sent Events shaped as JSON under `data:`.
+
+| Payload | Purpose |
+|---|---|
+| `{ "percent": 16, "sources": [...] }` | Allows source links to render before audio is finished |
+| `{ "audio_chunk": { "index": 0, "audio_url": "...", "text": "..." } }` | Adds a playable TTS segment and transcript text |
+| `{ "result": { "transcript": "...", "sources": [...], "total_chunks": 8, "audio_chunks": [...] } }` | Final metadata and full chunk list |
+
+The live path intentionally avoids duplicating one giant concatenated `audio_url` when chunks are available. Cached/sync compatibility paths may still include a full data URL.
+
 ---
 
 ## Deployment
@@ -189,8 +207,8 @@ This is scoped for demonstration. Before any production use, you'd want to addre
 
 - **Rate limiting is IP-based** — easily bypassed, not a production-grade solution
 - **In-memory cache** — up to 50 episodes cached, lost on server restart
-- **Base64 audio** — works for POC; replace with streaming or object storage at scale
-- **Generation time** — 15–30 min episodes can take 30–60 seconds to generate
+- **Base64 chunk URLs** — works for POC; replace with object storage, signed chunk URLs, or real byte streaming at scale
+- **Generation time** — playback can begin earlier through chunking, but long episodes still take time to fully complete
 - **Single-user focus** — not tuned for concurrent or production load
 - **Transcript sync drift** — character-weighted position estimation accumulates error over long episodes; real word timestamps would fix this
 

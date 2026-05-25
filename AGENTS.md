@@ -80,8 +80,10 @@ PodcastApp/
 
 ## Current Behavior
 
-- `/generate/stream` emits SSE progress and `audio_chunk` events as individual TTS chunks finish. Live clients can start playback before the full episode is done.
-- The final stream response omits the full `audio_url` when chunks were already sent, avoiding a giant duplicate base64 MP3 in the live path. Cached/sync paths still use a full data URL.
+- `/generate/stream` emits SSE progress, early `sources`, and `audio_chunk` events as individual TTS chunks finish. Live clients can show sources/transcript and start playback before the full episode is done.
+- The final stream response includes `total_chunks` and `audio_chunks`, but does not duplicate the full concatenated audio blob in the live path. The frontend keeps live/final chunk URLs as the primary playback source when any chunks arrive; concatenated full audio is only a sync/legacy fallback for responses with no chunk list.
+- Progressive playback only exposes contiguous audio chunks starting at index `0`; later chunks are held until missing earlier chunks arrive so playback cannot jump ahead.
+- The full daily briefing length defaults to Short (~5m).
 - TTS chunks target about 800 characters and split on sentence boundaries where possible.
 - OpenAI TTS uses a module-level client and dedicated thread pool.
 - Duplicate in-flight requests share the same generation task by cache key.
