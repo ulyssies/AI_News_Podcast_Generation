@@ -1,6 +1,6 @@
-# CLAUDE.md
+# CODEX.md
 
-This file is the source of truth for Claude Code in this project. Read it fully before acting. Agents must read it before scoped work.
+This file mirrors Codex-facing project guidance. `AGENTS.md` remains the source of truth for Codex in this project; keep both files in sync when behavior changes.
 
 ---
 
@@ -117,7 +117,7 @@ PodcastApp/
 
 All UI work references the shared design system before touching styles.
 
-**Shared reference:** `~/claude-shared/design-system.md`
+**Shared reference:** `~/Codex-shared/design-system.md`
 
 ---
 
@@ -155,16 +155,16 @@ All UI work references the shared design system before touching styles.
 
 ## Agent Files
 
-- `CLAUDE.md` is the Claude Code source of truth.
 - `AGENTS.md` is the Codex source of truth.
 - `codex.md` mirrors Codex-facing project guidance for tools or users that look for that filename.
-- `.claude/agents`, `.claude/commands`, and `.claude/skills` define Claude helper workflows.
+- `CLAUDE.md` is the Claude Code source of truth.
 - `.agents/skills/frontend-design/SKILL.md` mirrors the frontend design skill for Codex-oriented workflows.
+- `.claude/agents`, `.claude/commands`, and `.claude/skills` define Claude helper workflows.
 
-When project behavior changes, update `CLAUDE.md`, `AGENTS.md`, and `codex.md` together so future agents do not follow stale instructions.
+When project behavior changes, update `AGENTS.md`, `codex.md`, and `CLAUDE.md` together so future agents do not follow stale instructions.
 
 ---
 
 ## Session Notes
 
-Detailed session history lives in `.claude/session-notes.md`. The context-manager agent maintains it. Run `/session-end` at the end of every work session.
+Detailed session history currently lives in `.claude/session-notes.md`. The context-manager agent maintains it. Run `/session-end` at the end of every work session.

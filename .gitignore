@@ -41,9 +41,14 @@ out/
 *.swo
 .DS_Store
 Thumbs.db
+.claude/settings.local.json
+.agents/settings.local.json
 
 # Logs and temp
 *.log
 .env.backup
 *.tmp
 .cache/
+
+# Generated cover-art previews/alternates; committed covers are SVGs.
+web/public/category-covers/*.png
