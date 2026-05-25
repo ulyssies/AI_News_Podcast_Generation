@@ -15,22 +15,30 @@ type GenerateResponse = {
 };
 
 type BriefingMode = "full_daily" | "category";
+type AudioChunk = {
+  index: number;
+  audio_url: string;
+};
 
 const FETCH_TIMEOUT_MS = 10 * 60 * 1000;
+const RESTING_AUDIO_LEVELS = [0.26, 0.5, 0.64, 0.36, 0.22, 0.19, 0.14];
 
 export default function Home() {
   const [fullLength, setFullLength] = useState<"short" | "medium" | "long">("medium");
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [loadingMessage, setLoadingMessage] = useState("Preparing briefing...");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<GenerateResponse | null>(null);
   const [episodeTitle, setEpisodeTitle] = useState("Your briefing");
   const [loadingCategory, setLoadingCategory] = useState<string | null>(null);
   const [playerInstanceKey, setPlayerInstanceKey] = useState(0);
   const [briefingAudioPlaying, setBriefingAudioPlaying] = useState(false);
+  const [heroAudioLevels, setHeroAudioLevels] = useState(RESTING_AUDIO_LEVELS);
   const [audioTime, setAudioTime] = useState({ currentTime: 0, duration: 0 });
   const [modalOpen, setModalOpen] = useState(false);
   const [displayProgress, setDisplayProgress] = useState(0);
+  const [audioChunks, setAudioChunks] = useState<AudioChunk[]>([]);
 
   // Show modal on first visit; never again once dismissed via localStorage.
   useEffect(() => {
@@ -45,11 +53,12 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!result?.audio_url) {
+    if (!result?.audio_url && audioChunks.length === 0) {
       setBriefingAudioPlaying(false);
+      setHeroAudioLevels(RESTING_AUDIO_LEVELS);
       setAudioTime({ currentTime: 0, duration: 0 });
     }
-  }, [result?.audio_url]);
+  }, [result?.audio_url, audioChunks.length]);
 
   useEffect(() => {
     if (loadingCategory) {
@@ -63,12 +72,16 @@ export default function Home() {
       setDisplayProgress(progress === 100 ? 100 : 0);
       return;
     }
+    const targetProgress = Math.min(progress, 99);
     const id = setInterval(() => {
       setDisplayProgress((prev) => {
-        if (prev < progress) {
-          return Math.min(progress, prev + Math.max(1, (progress - prev) * 0.18));
+        if (prev < targetProgress) {
+          return Math.min(
+            targetProgress,
+            prev + Math.max(1, (targetProgress - prev) * 0.18)
+          );
         }
-        return prev < 93 ? prev + 0.14 : prev;
+        return prev < 93 ? Math.min(93, prev + 0.14) : Math.min(prev, 99);
       });
     }, 200);
     return () => clearInterval(id);
@@ -82,11 +95,15 @@ export default function Home() {
     async (mode: BriefingMode, opts: { categoryKey?: string; length: string; title: string }) => {
       setLoading(true);
       setProgress(0);
+      setDisplayProgress(0);
+      setLoadingMessage("Preparing briefing...");
       setError(null);
       setResult(null);
+      setAudioChunks([]);
       setAudioTime({ currentTime: 0, duration: 0 });
       setEpisodeTitle(opts.title);
       setLoadingCategory(mode === "category" ? opts.categoryKey ?? null : null);
+      setPlayerInstanceKey((k) => k + 1);
 
       try {
         const controller = new AbortController();
@@ -143,6 +160,7 @@ export default function Home() {
                 percent?: number;
                 message?: string;
                 result?: GenerateResponse;
+                audio_chunk?: AudioChunk;
                 error?: string;
               };
               if (data.error) {
@@ -152,10 +170,19 @@ export default function Home() {
                 return;
               }
               if (typeof data.percent === "number") setProgress(data.percent);
+              if (data.message) setLoadingMessage(data.message);
+              if (data.audio_chunk?.audio_url) {
+                setAudioChunks((prev) => {
+                  const next = prev.filter((chunk) => chunk.index !== data.audio_chunk!.index);
+                  next.push(data.audio_chunk!);
+                  return next.sort((a, b) => a.index - b.index);
+                });
+                if (data.message) setLoadingMessage(data.message);
+              }
               if (data.result) {
                 setResult(data.result);
                 setProgress(100);
-                setPlayerInstanceKey((k) => k + 1);
+                setLoadingMessage("Ready");
                 gotResult = true;
                 break;
               }
@@ -180,8 +207,15 @@ export default function Home() {
     []
   );
 
-  const dockVisible = loading || !!result;
-  const audioUrl = result?.audio_url ?? null;
+  const audioUrls = audioChunks.length
+    ? audioChunks.map((chunk) => chunk.audio_url)
+    : result?.audio_url
+      ? [result.audio_url]
+      : [];
+  const visibleProgress = Math.round(
+    loading && !result ? Math.min(displayProgress, 99) : displayProgress
+  );
+  const dockVisible = loading || !!result || audioUrls.length > 0;
 
   return (
     <>
@@ -189,10 +223,18 @@ export default function Home() {
         <title>Daily Briefing</title>
       </Head>
 
-      <main className="bg-[#0a0a0a] text-slate-100 lg:flex lg:h-screen lg:overflow-hidden">
+      <main className="relative bg-[#050508] text-slate-100 lg:flex lg:h-screen lg:overflow-hidden">
+        <div
+          className="pointer-events-none fixed inset-0 opacity-80"
+          aria-hidden
+          style={{
+            background:
+              "linear-gradient(135deg, rgba(99,102,241,0.10) 0%, transparent 28%, transparent 68%, rgba(20,184,166,0.06) 100%)",
+          }}
+        />
 
         {/* ── LEFT COLUMN — sticky sidebar, 35% on desktop ── */}
-        <div className="lg:w-[35%] lg:h-full lg:flex lg:flex-col lg:border-r lg:border-[#222222]">
+        <div className="relative lg:w-[35%] lg:h-full lg:flex lg:flex-col lg:border-r lg:border-[#222222]">
           <div
             id="layout-left-inner"
             className="px-4 sm:px-6 lg:px-5 py-4 sm:py-5 lg:py-5 lg:overflow-y-auto lg:flex-1"
@@ -234,7 +276,10 @@ export default function Home() {
                 }
                 loading={loading}
                 isFullBriefingActive={loading && loadingCategory === null}
-                progress={progress}
+                progress={visibleProgress}
+                loadingMessage={loadingMessage}
+                audioLevels={heroAudioLevels}
+                audioReactive={briefingAudioPlaying}
               />
             </div>
 
@@ -257,12 +302,24 @@ export default function Home() {
         </div>
 
         {/* ── MOBILE GLOBE — idle visual between controls and transcript ── */}
-        {!result && !loading && !error && (
-          <div className="lg:hidden" id="mobile-globe-container">
+        {!result && !error && (
+          <div
+            className="lg:hidden"
+            id="mobile-globe-container"
+            data-state={loading ? "loading" : "idle"}
+          >
             <div id="mobile-globe-sphere">
-              <HeroGlobeBroadcast audioPlaying={false} variant="mobile" />
+              <HeroGlobeBroadcast
+                variant="mobile"
+                activity={loading ? "active" : "idle"}
+                progress={visibleProgress}
+              />
             </div>
-            <p id="mobile-globe-label">Select a briefing to begin</p>
+            {!loading && (
+              <p id="mobile-globe-label" className="tabular-nums">
+                Select a briefing to begin
+              </p>
+            )}
           </div>
         )}
 
@@ -278,7 +335,7 @@ export default function Home() {
             {/* Desktop: idle state — large centered globe as visual centerpiece */}
             {!result && !loading && !error && (
               <div className="hidden lg:block relative h-full min-h-[60vh] overflow-hidden">
-                <HeroGlobeBroadcast audioPlaying={false} variant="centered" />
+                <HeroGlobeBroadcast variant="centered" />
                 <div className="absolute inset-x-0 bottom-8 flex justify-center pointer-events-none">
                   <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-[#2e2e2e]">
                     Select a briefing to begin
@@ -289,11 +346,12 @@ export default function Home() {
 
             {/* Desktop: loading state */}
             {loading && !result && (
-              <div className="hidden lg:flex h-full min-h-[60vh] flex-col items-center justify-center gap-3">
-                <div className="h-4 w-4 rounded-full border-2 border-[#2a2a2a] border-t-[#6366f1] animate-spin" />
-                <p className="text-[10px] font-medium uppercase tracking-[0.22em] text-[#444444] tabular-nums">
-                  Generating… {Math.round(displayProgress)}%
-                </p>
+              <div className="hidden lg:flex relative h-full min-h-[60vh] flex-col items-center justify-center overflow-hidden">
+                <HeroGlobeBroadcast
+                  variant="centered"
+                  activity="active"
+                  progress={visibleProgress}
+                />
               </div>
             )}
 
@@ -370,12 +428,14 @@ export default function Home() {
           <BriefingPlayerDock
             visible={dockVisible}
             loading={loading}
-            progress={Math.round(displayProgress)}
+            progress={visibleProgress}
             episodeTitle={episodeTitle}
-            audioUrl={audioUrl}
+            audioUrls={audioUrls}
             playerId={`briefing-${playerInstanceKey}`}
             onPlayStateChange={setBriefingAudioPlaying}
             onTimeUpdate={handleTimeUpdate}
+            onAudioLevels={setHeroAudioLevels}
+            loadingMessage={loadingMessage}
           />
         </div>
       </main>

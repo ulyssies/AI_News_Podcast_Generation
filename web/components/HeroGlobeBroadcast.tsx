@@ -3,17 +3,21 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 type HeroGlobeBroadcastProps = {
-  audioPlaying: boolean;
   /** "bleed" (default): globe positioned right, bleeds off the card edge.
    *  "centered": globe centered within its container — used for the idle right panel.
-   *  "mobile": same centering as "centered" but constrained to 200×200px for the mobile divider. */
+   *  "mobile": same centering as "centered" but constrained for the mobile divider. */
   variant?: "bleed" | "centered" | "mobile";
+  activity?: "idle" | "active";
+  progress?: number;
 };
 
 const DEG = Math.PI / 180;
 const TILT = 23 * DEG;
-/** ~25s per full rotation */
-const SPIN_PERIOD_SEC = 25;
+const IDLE_SPIN_PERIOD_SEC = 24;
+const ACTIVE_SPIN_PERIOD_SEC = 16;
+const ACTIVE_SPIN_ACCELERATION_SEC = 9;
+const MIN_ACTIVE_SPIN_PERIOD_SEC = 6;
+const FRAME_INTERVAL_SEC = 1 / 42;
 const R = 292; // large sphere; ~584px diameter in viewBox space
 
 function rotateTilt(
@@ -83,22 +87,47 @@ function parallelToPath(phi: number, spin: number): string {
 const PARALLELS_DEG = [75, 60, 45, 30, 15, 0, -15, -30, -45, -60, -75];
 const MERIDIANS_COUNT = 12;
 
-export function HeroGlobeBroadcast({ audioPlaying, variant = "bleed" }: HeroGlobeBroadcastProps) {
+export function HeroGlobeBroadcast({
+  variant = "bleed",
+  activity = "idle",
+  progress = 0,
+}: HeroGlobeBroadcastProps) {
   const uid = useId().replace(/:/g, "");
   const spinRef = useRef(0);
   const rafRef = useRef<number>(0);
+  const activityRef = useRef(activity);
+  const progressRef = useRef(progress);
   const [, tick] = useState(0);
 
   useEffect(() => {
+    activityRef.current = activity;
+  }, [activity]);
+
+  useEffect(() => {
+    progressRef.current = Math.min(99, Math.max(0, progress));
+  }, [progress]);
+
+  useEffect(() => {
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReducedMotion) return;
+
     let last = performance.now();
     let acc = 0;
     const loop = (t: number) => {
       const dt = Math.min((t - last) / 1000, 0.05);
       last = t;
-      spinRef.current += (2 * Math.PI * dt) / SPIN_PERIOD_SEC;
+      const progressRatio = progressRef.current / 100;
+      const spinPeriod =
+        activityRef.current === "active"
+          ? Math.max(
+              MIN_ACTIVE_SPIN_PERIOD_SEC,
+              ACTIVE_SPIN_PERIOD_SEC - progressRatio * ACTIVE_SPIN_ACCELERATION_SEC
+            )
+          : IDLE_SPIN_PERIOD_SEC;
+      spinRef.current += (2 * Math.PI * dt) / spinPeriod;
       if (spinRef.current > Math.PI * 2) spinRef.current -= Math.PI * 2;
       acc += dt;
-      if (acc >= 1 / 24) {
+      if (acc >= FRAME_INTERVAL_SEC) {
         acc = 0;
         tick((n) => (n + 1) % 10000);
       }
@@ -125,13 +154,20 @@ export function HeroGlobeBroadcast({ audioPlaying, variant = "bleed" }: HeroGlob
     });
   }
 
-  const np = project(Math.PI / 2 - 0.001, 0, spin);
-  const sp = project(-Math.PI / 2 + 0.001, 0, spin);
+  const scanPhi = Math.sin(spin * 0.72) * 28 * DEG;
+  const scanPath = parallelToPath(scanPhi, spin * 0.35);
 
   const glowId = `globe-glow-${uid}`;
   const softId = `globe-soft-${uid}`;
+  const scanId = `globe-scan-${uid}`;
+  const surfaceId = `globe-surface-${uid}`;
+  const shadowId = `globe-shadow-${uid}`;
+  const auraId = `globe-aura-${uid}`;
+  const clipId = `globe-clip-${uid}`;
+  const edgeFadeId = `globe-edge-fade-${uid}`;
+  const edgeMaskId = `globe-edge-mask-${uid}`;
 
-  const vb = Math.ceil(R + 28);
+  const vb = Math.ceil(R + 48);
 
   return (
     <div
@@ -175,69 +211,119 @@ export function HeroGlobeBroadcast({ audioPlaying, variant = "bleed" }: HeroGlob
                 <feMergeNode in="SourceGraphic" />
               </feMerge>
             </filter>
+            <linearGradient id={scanId} x1="-1" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="rgba(99,102,241,0)" />
+              <stop offset="45%" stopColor="rgba(129,140,248,0.95)" />
+              <stop offset="100%" stopColor="rgba(34,211,238,0)" />
+            </linearGradient>
+            <radialGradient id={surfaceId} cx="34%" cy="28%" r="78%">
+              <stop
+                offset="0%"
+                stopColor={
+                  activity === "active"
+                    ? "rgba(210, 226, 255, 0.42)"
+                    : "rgba(190, 210, 255, 0.26)"
+                }
+              />
+              <stop offset="42%" stopColor="rgba(45, 61, 112, 0.34)" />
+              <stop offset="72%" stopColor="rgba(18, 25, 49, 0.50)" />
+              <stop offset="100%" stopColor="rgba(3, 6, 18, 0.82)" />
+            </radialGradient>
+            <radialGradient id={shadowId} cx="72%" cy="76%" r="78%">
+              <stop offset="0%" stopColor="rgba(0, 0, 0, 0)" />
+              <stop offset="56%" stopColor="rgba(0, 0, 0, 0.18)" />
+              <stop offset="100%" stopColor="rgba(0, 0, 0, 0.78)" />
+            </radialGradient>
+            <radialGradient id={auraId} cx="50%" cy="50%" r="54%">
+              <stop offset="0%" stopColor="rgba(99, 102, 241, 0.22)" />
+              <stop offset="60%" stopColor="rgba(34, 211, 238, 0.08)" />
+              <stop offset="100%" stopColor="rgba(34, 211, 238, 0)" />
+            </radialGradient>
+            <radialGradient id={edgeFadeId} cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="#fff" stopOpacity={1} />
+              <stop offset="72%" stopColor="#fff" stopOpacity={1} />
+              <stop offset="91%" stopColor="#fff" stopOpacity={0.46} />
+              <stop offset="100%" stopColor="#fff" stopOpacity={0.06} />
+            </radialGradient>
+            <clipPath id={clipId}>
+              <circle cx={0} cy={0} r={R} />
+            </clipPath>
+            <mask
+              id={edgeMaskId}
+              maskUnits="userSpaceOnUse"
+              x={-R}
+              y={-R}
+              width={R * 2}
+              height={R * 2}
+            >
+              <circle cx={0} cy={0} r={R} fill={`url(#${edgeFadeId})`} />
+            </mask>
           </defs>
 
-          {/* Silhouette / limb — reads clearly as a sphere */}
           <circle
             cx={0}
             cy={0}
-            r={R}
-            stroke="rgba(186, 210, 255, 0.38)"
-            strokeWidth={1}
-            filter={`url(#${softId})`}
+            r={R + 46}
+            fill={`url(#${auraId})`}
+            opacity={activity === "active" ? 0.95 : 0.52}
+            className="globe-breath"
           />
 
-          {/* Latitude parallels (horizontal rings on globe) */}
-          {parallelPaths.map(({ d, equator }, i) =>
-            d ? (
-              <path
-                key={`p-${i}`}
-                d={d}
-                stroke={
-                  equator
-                    ? "rgba(210, 232, 255, 0.88)"
-                    : "rgba(175, 205, 255, 0.52)"
-                }
-                strokeWidth={equator ? 1.45 : 0.8}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                filter={`url(#${glowId})`}
-              />
-            ) : null
-          )}
+          <circle cx={0} cy={0} r={R} fill={`url(#${surfaceId})`} />
+          <circle cx={0} cy={0} r={R} fill={`url(#${shadowId})`} />
+          <ellipse
+            cx={-84}
+            cy={-116}
+            rx={128}
+            ry={48}
+            fill="rgba(232, 240, 255, 0.16)"
+            transform="rotate(-18 -84 -116)"
+            className="globe-surface-highlight"
+          />
+          <g clipPath={`url(#${clipId})`} mask={`url(#${edgeMaskId})`}>
+            {parallelPaths.map(({ d, equator }, i) =>
+              d ? (
+                <path
+                  key={`p-${i}`}
+                  d={d}
+                  stroke={
+                    equator
+                      ? "rgba(220, 234, 255, 0.62)"
+                      : "rgba(174, 199, 255, 0.30)"
+                  }
+                  strokeWidth={equator ? 1.25 : 0.7}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  filter={`url(#${glowId})`}
+                />
+              ) : null
+            )}
 
-          {/* Meridians — pole to pole */}
-          {meridianPaths.map((d, i) =>
-            d ? (
-              <path
-                key={`m-${i}`}
-                d={d}
-                stroke="rgba(200, 218, 255, 0.58)"
-                strokeWidth={0.75}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                filter={`url(#${glowId})`}
-              />
-            ) : null
-          )}
+            {meridianPaths.map((d, i) =>
+              d ? (
+                <path
+                  key={`m-${i}`}
+                  d={d}
+                  stroke="rgba(196, 214, 255, 0.34)"
+                  strokeWidth={0.7}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  filter={`url(#${glowId})`}
+                />
+              ) : null
+            )}
+          </g>
 
-          {/* North & South pole markers */}
-          {np.z / R > Z_CLIP && (
-            <circle
-              cx={np.x}
-              cy={np.y}
-              r={3.2}
-              fill="rgba(240, 248, 255, 0.95)"
-              filter={`url(#${softId})`}
-            />
-          )}
-          {sp.z / R > Z_CLIP && (
-            <circle
-              cx={sp.x}
-              cy={sp.y}
-              r={3.2}
-              fill="rgba(230, 240, 255, 0.88)"
-              filter={`url(#${softId})`}
+          {scanPath && (
+            <path
+              d={scanPath}
+              stroke={`url(#${scanId})`}
+              strokeWidth={activity === "active" ? 1.4 : 1.1}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              filter={`url(#${glowId})`}
+              mask={`url(#${edgeMaskId})`}
+              className="globe-scan-line"
             />
           )}
         </svg>

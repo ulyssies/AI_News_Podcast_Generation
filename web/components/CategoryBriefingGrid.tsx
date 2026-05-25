@@ -1,26 +1,5 @@
-import {
-  Clapperboard,
-  Cpu,
-  Globe,
-  Heart,
-  Microscope,
-  Scale,
-  Trophy,
-  TrendingUp,
-  type LucideIcon,
-} from "lucide-react";
-import { BRIEFING_CATEGORIES, type CategoryIconId } from "../lib/categories";
-
-const CATEGORY_ICONS: Record<CategoryIconId, LucideIcon> = {
-  globe: Globe,
-  "trending-up": TrendingUp,
-  microscope: Microscope,
-  trophy: Trophy,
-  clapperboard: Clapperboard,
-  cpu: Cpu,
-  heart: Heart,
-  scale: Scale,
-};
+import type { CSSProperties } from "react";
+import { BRIEFING_CATEGORIES } from "../lib/categories";
 
 type CategoryBriefingGridProps = {
   onSelectCategory: (categoryKey: string, label: string) => void;
@@ -38,24 +17,27 @@ export function CategoryBriefingGrid({
   compact = false,
 }: CategoryBriefingGridProps) {
   return (
-    <section className={compact ? "mt-4" : "mt-6 sm:mt-8"}>
-      <div className={`flex items-baseline justify-between gap-2 ${compact ? "mb-2" : "mb-3 sm:mb-4"}`}>
-        <h2 className={`font-display font-bold text-white tracking-tight ${compact ? "text-xs" : "text-sm"}`}>
+    <section className={compact ? "mt-5" : "mt-6 sm:mt-8"}>
+      <div className={`flex items-baseline justify-between gap-2 ${compact ? "mb-4" : "mb-5 sm:mb-6"}`}>
+        <h2 className={`font-sans font-extrabold text-white tracking-normal ${compact ? "text-[22px] leading-none" : "text-3xl leading-none"}`}>
           Go deeper
         </h2>
-        <span className="text-[10px] text-slate-500 whitespace-nowrap">~10 min each</span>
+        <span className={`font-sans text-slate-500 whitespace-nowrap ${compact ? "text-sm" : "text-base"}`}>~10 min each</span>
       </div>
 
       <div
         className={
           compact
-            ? "grid grid-cols-2 gap-1.5"
+            ? "grid grid-cols-2 min-[760px]:grid-cols-4 gap-3"
             : "grid grid-cols-2 sm:grid-cols-4 gap-3 lg:gap-4"
         }
       >
         {BRIEFING_CATEGORIES.map((cat) => {
           const busy = loading && loadingCategory === cat.key;
-          const Icon = CATEGORY_ICONS[cat.iconId];
+          const artworkStyle = {
+            borderColor: cat.borderColor,
+            "--category-accent-color": cat.accentColor,
+          } as CSSProperties;
 
           return (
             <button
@@ -63,53 +45,36 @@ export function CategoryBriefingGrid({
               type="button"
               disabled={loading}
               onClick={() => onSelectCategory(cat.key, cat.label)}
-              style={{
-                background: cat.cardBg,
-                borderColor: cat.borderColor,
-              }}
-              className={`group relative flex flex-col text-left rounded-xl border overflow-hidden transition-all duration-200 hover:scale-[1.025] hover:brightness-110 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed focus:outline-none focus-visible:ring-2 focus-visible:ring-white/25 ${
-                compact ? "aspect-[5/2]" : "aspect-[3/2]"
-              }`}
+              style={artworkStyle}
+              aria-label={`Generate ${cat.label} briefing`}
+              className="category-card category-cover-card group relative flex aspect-square flex-col justify-end overflow-hidden rounded-[8px] border text-left transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_14px_36px_rgba(0,0,0,0.32)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/25"
             >
-              {/* Vignette */}
-              <div
-                className="absolute inset-0 pointer-events-none"
-                style={{
-                  background:
-                    "radial-gradient(ellipse at 50% 0%, transparent 40%, rgba(0,0,0,0.55) 100%)",
-                }}
+              <img
+                src={cat.coverSrc}
+                alt=""
+                className="category-cover-image"
+                draggable={false}
               />
 
-              {/* Icon */}
-              <div className={`relative flex-1 flex items-center justify-center ${compact ? "pt-1.5 pb-0" : "pt-3 pb-1"}`}>
-                <Icon
-                  style={{ color: cat.iconColor }}
-                  className={`shrink-0 drop-shadow-[0_0_12px_currentColor] transition-transform duration-200 group-hover:scale-110 ${
-                    compact
-                      ? "h-5 w-5 sm:h-6 sm:w-6"
-                      : "h-9 w-9 sm:h-10 sm:w-10 lg:h-11 lg:w-11"
-                  }`}
-                  strokeWidth={1.3}
-                  aria-hidden
-                />
-              </div>
-
-              {/* Label */}
-              <div className={`relative ${compact ? "px-2 pb-1.5" : "px-3 pb-3 pt-0"}`}>
-                <p className={`font-semibold text-white leading-tight ${compact ? "text-[10px]" : "text-[11px] sm:text-xs"}`}>
-                  {cat.label}
-                </p>
-                {!compact && (
-                  <p className="mt-0.5 text-[9px] sm:text-[10px] text-white/45 leading-tight line-clamp-1 hidden sm:block">
-                    {cat.description}
-                  </p>
-                )}
-              </div>
+              <p
+                className="category-cover-title z-10 font-sans font-extrabold text-white tracking-normal drop-shadow-[0_2px_10px_rgba(0,0,0,0.72)]"
+                data-long-title={cat.label.length > 12 ? "true" : undefined}
+              >
+                {cat.label}
+              </p>
 
               {/* Generating overlay */}
               {busy && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/40 rounded-xl backdrop-blur-[2px]">
-                  <div className="h-5 w-5 rounded-full border-2 border-white/20 border-t-white animate-spin" />
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/45 rounded-[8px] backdrop-blur-[2px]">
+                  <div className="flex items-end gap-1" aria-hidden>
+                    {[0, 1, 2].map((bar) => (
+                      <span
+                        key={bar}
+                        className="audio-wave-bar w-1 rounded-full bg-white/80"
+                        style={{ height: `${10 + bar * 4}px`, animationDelay: `${bar * 110}ms` }}
+                      />
+                    ))}
+                  </div>
                   <span className="text-[9px] font-medium text-white/70">Generating…</span>
                 </div>
               )}

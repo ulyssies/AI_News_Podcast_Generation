@@ -65,14 +65,40 @@ body {
   #mobile-categories {
     min-width: 0;
     overflow: hidden;
-    background: #111111;
-    border: 1px solid #222222;
-    border-radius: 16px; /* matches hero card rounded-2xl */
+    position: relative;
+    background: #08080b;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
     padding: 10px;
+    box-shadow: 0 25px 70px rgba(0, 0, 0, 0.5);
+  }
+
+  #mobile-categories::before,
+  #mobile-categories::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  #mobile-categories::before {
+    background:
+      radial-gradient(ellipse 85% 70% at 18% 18%, rgba(99, 102, 241, 0.18), transparent 50%),
+      linear-gradient(165deg, rgba(255, 255, 255, 0.07) 0%, transparent 34%, rgba(20, 184, 166, 0.08) 100%);
+  }
+
+  #mobile-categories::after {
+    background:
+      linear-gradient(110deg, transparent 0%, rgba(255, 255, 255, 0.09) 42%, transparent 56%);
+    opacity: 0.24;
+    transform: translateX(-70%);
+    animation: card-sheen 7s ease-in-out infinite;
   }
 
   /* Remove the section's own top margin — the card padding handles spacing */
   #mobile-categories > section {
+    position: relative;
+    z-index: 1;
     margin-top: 0;
   }
 
@@ -111,7 +137,7 @@ body {
     padding-right: 6px;
   }
 
-  /* Hide the time hint (e.g. "~5m") — label alone fits; hint causes overflow */
+  /* Hide the time hint on narrow screens; the label alone fits cleanly. */
   #length-pills > button > span + span {
     display: none;
   }
@@ -121,21 +147,14 @@ body {
     width: 100%;
   }
 
-  /* ── CATEGORY GRID: fixed-height cards so all 8 fit without scrolling ── */
-
-  /*
-   * Override Tailwind's aspect-[5/2] with a fixed height.
-   * At 48px: icon (20px) + label (~12px) + padding = comfortable.
-   * Specificity: 1 ID + 1 attribute selector > Tailwind utility.
-   */
+  /* ── CATEGORY GRID: generated-cover cards ── */
   #mobile-categories button[type="button"] {
-    aspect-ratio: auto;
-    height: 48px;
+    min-height: 72px;
   }
 
-  /* Tighten the gap between cards (Tailwind compact sets gap-1.5 = 6px) */
+  /* Keep the album grid airy and square like generated playlist covers. */
   #mobile-categories .grid {
-    gap: 4px;
+    gap: 8px;
   }
 
   /* ── RIGHT COLUMN: transcript + sources flow full-width below top row ── */
@@ -185,6 +204,10 @@ body {
     color: #2e2e2e;
     margin-top: 4px;
   }
+
+  #mobile-globe-container[data-state="loading"] #mobile-globe-label {
+    color: #6f7890;
+  }
 }
 
 @keyframes hero-wave-bar {
@@ -196,5 +219,120 @@ body {
   50% {
     transform: scaleY(1);
     opacity: 1;
+  }
+}
+
+.audio-wave-bar {
+  transform-origin: bottom;
+  animation: hero-wave-bar 1.05s ease-in-out infinite;
+}
+
+.hero-card-sheen {
+  background:
+    linear-gradient(110deg, transparent 0%, rgba(255,255,255,0.09) 42%, transparent 56%);
+  opacity: 0.34;
+  transform: translateX(-70%);
+  animation: card-sheen 7s ease-in-out infinite;
+}
+
+.category-cover-card {
+  background: #08080b;
+  container-type: inline-size;
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.22);
+}
+
+.category-cover-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  user-select: none;
+}
+
+.category-cover-title {
+  position: absolute;
+  left: clamp(20px, 24cqw, 48px);
+  right: clamp(4px, 5cqw, 24px);
+  top: 64%;
+  transform: translateY(-50%);
+  font-size: clamp(11px, 8.6cqw, 32px);
+  line-height: 1.02;
+}
+
+.category-cover-title[data-long-title="true"] {
+  font-size: clamp(8.5px, 7.4cqw, 28px);
+}
+
+.globe-breath {
+  transform-origin: center;
+  animation: globe-breath 4.6s ease-in-out infinite;
+}
+
+.globe-scan-line {
+  opacity: 0.85;
+  animation: globe-scan 2.6s ease-in-out infinite;
+}
+
+.globe-surface-highlight {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: globe-surface-highlight 5.8s ease-in-out infinite;
+}
+
+@keyframes card-sheen {
+  0% {
+    transform: translateX(-80%);
+  }
+  45%,
+  100% {
+    transform: translateX(80%);
+  }
+}
+
+@keyframes globe-breath {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.985);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+}
+
+@keyframes globe-scan {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes globe-surface-highlight {
+  0%,
+  100% {
+    opacity: 0.12;
+    transform: translateX(-4px) scale(0.96);
+  }
+  50% {
+    opacity: 0.24;
+    transform: translateX(8px) scale(1.04);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .audio-wave-bar,
+  .hero-card-sheen,
+  #mobile-categories::after,
+  .globe-breath,
+  .globe-scan-line,
+  .globe-surface-highlight {
+    animation: none;
   }
 }

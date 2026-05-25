@@ -8,6 +8,8 @@ export interface UseAudioPlayerOptions {
   id: string;
   /** Called when this clip is stopped because another clip started. */
   onStoppedByAnother?: () => void;
+  /** Called when the current source reaches the end. */
+  onEnded?: () => void;
 }
 
 export interface UseAudioPlayerReturn {
@@ -37,7 +39,7 @@ export function useAudioPlayer(
   src: string | undefined,
   options: UseAudioPlayerOptions
 ): UseAudioPlayerReturn {
-  const { id, onStoppedByAnother } = options;
+  const { id, onStoppedByAnother, onEnded } = options;
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -45,6 +47,8 @@ export function useAudioPlayer(
   const [ready, setReady] = useState(false);
   const onStoppedRef = useRef(onStoppedByAnother);
   onStoppedRef.current = onStoppedByAnother;
+  const onEndedRef = useRef(onEnded);
+  onEndedRef.current = onEnded;
 
   const stop = useCallback(() => {
     const el = audioRef.current;
@@ -86,6 +90,12 @@ export function useAudioPlayer(
   }, [id, src]);
 
   useEffect(() => {
+    setCurrentTime(0);
+    setDuration(0);
+    setReady(false);
+  }, [src]);
+
+  useEffect(() => {
     const el = audioRef.current;
     if (!el || !src) return;
 
@@ -101,6 +111,7 @@ export function useAudioPlayer(
       setPlaying(false);
       setCurrentTime(0);
       release(id);
+      onEndedRef.current?.();
     };
 
     el.addEventListener("timeupdate", onTimeUpdate);

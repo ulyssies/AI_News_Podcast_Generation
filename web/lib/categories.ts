@@ -1,87 +1,68 @@
 /** Curated briefing categories — keys must match API `category` values. */
-export type CategoryIconId =
-  | "globe"
-  | "trending-up"
-  | "microscope"
-  | "trophy"
-  | "clapperboard"
-  | "cpu"
-  | "heart"
-  | "scale";
-
 export const BRIEFING_CATEGORIES = [
   {
     key: "current_events",
     label: "Current Events",
+    coverSrc: "/category-covers/current-events.svg",
     description: "Today's top stories from around the world",
-    iconId: "globe" as const,
-    // ~35% red hue blended into #0a0a0a, fades to near-black by 70%
-    cardBg: "radial-gradient(ellipse at 30% 25%, #370d0d 0%, #0a0a0a 70%)",
-    iconColor: "#fca5a5",
-    borderColor: "rgba(239, 68, 68, 0.10)",
+    accentColor: "#fb7185",
+    borderColor: "rgba(252, 165, 165, 0.24)",
   },
   {
     key: "financial_report",
     label: "Financial Report",
+    coverSrc: "/category-covers/financial-report.svg",
     description: "Markets, earnings, and economic trends",
-    iconId: "trending-up" as const,
-    cardBg: "radial-gradient(ellipse at 30% 25%, #0d2416 0%, #0a0a0a 70%)",
-    iconColor: "#86efac",
-    borderColor: "rgba(34, 197, 94, 0.10)",
+    accentColor: "#86efac",
+    borderColor: "rgba(134, 239, 172, 0.24)",
   },
   {
     key: "science",
     label: "Latest in Science",
+    coverSrc: "/category-covers/science.svg",
     description: "Discoveries, research, and breakthroughs",
-    iconId: "microscope" as const,
-    cardBg: "radial-gradient(ellipse at 30% 25%, #110f21 0%, #0a0a0a 70%)",
-    iconColor: "#a5b4fc",
-    borderColor: "rgba(99, 102, 241, 0.10)",
+    accentColor: "#93b4ff",
+    borderColor: "rgba(165, 180, 252, 0.24)",
   },
   {
     key: "sports",
     label: "Sports",
+    coverSrc: "/category-covers/sports.svg",
     description: "Scores, highlights, and headlines",
-    iconId: "trophy" as const,
-    cardBg: "radial-gradient(ellipse at 30% 25%, #301810 0%, #0a0a0a 70%)",
-    iconColor: "#fcd34d",
-    borderColor: "rgba(245, 158, 11, 0.10)",
+    accentColor: "#f97316",
+    borderColor: "rgba(251, 146, 60, 0.24)",
   },
   {
     key: "entertainment",
     label: "Entertainment",
+    coverSrc: "/category-covers/entertainment.svg",
     description: "Movies, music, culture, and celebrity news",
-    iconId: "clapperboard" as const,
-    cardBg: "radial-gradient(ellipse at 30% 25%, #251036 0%, #0a0a0a 70%)",
-    iconColor: "#e879f9",
-    borderColor: "rgba(192, 38, 211, 0.10)",
+    accentColor: "#e879f9",
+    borderColor: "rgba(232, 121, 249, 0.24)",
   },
   {
     key: "tech_ai",
     label: "Tech & AI",
+    coverSrc: "/category-covers/tech-ai.svg",
     description: "The latest in technology and artificial intelligence",
-    iconId: "cpu" as const,
-    cardBg: "radial-gradient(ellipse at 30% 25%, #0b2030 0%, #0a0a0a 70%)",
-    iconColor: "#7dd3fc",
-    borderColor: "rgba(14, 165, 233, 0.10)",
+    accentColor: "#67e8f9",
+    borderColor: "rgba(125, 211, 252, 0.24)",
   },
   {
     key: "health_wellness",
     label: "Health & Wellness",
+    coverSrc: "/category-covers/health-wellness.svg",
     description: "Medical news, wellness tips, and research",
-    iconId: "heart" as const,
-    cardBg: "radial-gradient(ellipse at 30% 25%, #0d221f 0%, #0a0a0a 70%)",
-    iconColor: "#5eead4",
-    borderColor: "rgba(20, 184, 166, 0.10)",
+    accentColor: "#84cc16",
+    borderColor: "rgba(132, 204, 22, 0.24)",
   },
   {
     key: "politics",
     label: "Politics",
+    coverSrc: "/category-covers/politics.svg",
     description: "Balanced coverage, all sides, no spin",
-    iconId: "scale" as const,
-    cardBg: "radial-gradient(ellipse at 30% 25%, #111b28 0%, #0a0a0a 70%)",
-    iconColor: "#93c5fd",
-    borderColor: "rgba(59, 130, 246, 0.10)",
+    accentColor: "#818cf8",
+    borderColor: "rgba(99, 102, 241, 0.24)",
   },
 ] as const;
 
