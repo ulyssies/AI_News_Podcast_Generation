@@ -254,15 +254,14 @@ body {
 
 .category-cover-title {
   position: absolute;
-  left: 24px;
-  right: 12px;
-  bottom: 30px;
   margin: 0;
-  max-width: calc(100% - 36px);
+  max-width: none;
   text-align: left;
-  font-size: 15px;
-  line-height: 1.02;
   letter-spacing: 0;
+  white-space: normal;
+  overflow-wrap: normal;
+  word-break: normal;
+  text-wrap: balance;
 }
 
 .globe-breath {

@@ -58,6 +58,13 @@ export function CategoryBriefingGrid({
 
               <p
                 className="category-cover-title z-10 font-sans font-extrabold text-white tracking-normal drop-shadow-[0_2px_10px_rgba(0,0,0,0.72)]"
+                style={{
+                  left: "clamp(26px, 15cqw, 38px)",
+                  right: "clamp(10px, 7cqw, 18px)",
+                  bottom: "clamp(22px, 17cqw, 34px)",
+                  fontSize: "clamp(12px, 8.5cqw, 16px)",
+                  lineHeight: 1.02,
+                }}
               >
                 {cat.label}
               </p>
