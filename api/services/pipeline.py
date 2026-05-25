@@ -13,18 +13,23 @@ from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from api.models import GenerateEpisodeResponse, EpisodeSource
 from api.services.news import fetch_full_daily_briefing_articles, fetch_news_for_category_key
-from api.services.script import stream_podcast_script, generate_podcast_script
+from api.services.script import (
+    count_script_words,
+    generate_podcast_script,
+    generate_script_extension,
+    minimum_word_count,
+    stream_podcast_script,
+)
 from api.services.tts import (
     TTS_MAX_CHARS,
     bytes_to_data_url,
     ensure_tts_configured,
-    synthesize_one_chunk,
     synthesize_one_chunk_result,
 )
 
 logger = logging.getLogger(__name__)
 
-MAX_ARTICLES_BY_LENGTH = {"short": 6, "medium": 8, "long": 10}
+MAX_ARTICLES_BY_LENGTH = {"short": 6, "medium": 12, "long": 16}
 MAX_ARTICLES_FULL_DAILY = {"short": 24, "medium": 32, "long": 40}
 
 CATEGORY_LABELS = {
@@ -163,6 +168,17 @@ async def generate_episode_stream(
         pct = min(72, 20 + tts_chunks_started * 5)
         event_queue.put_nowait({"type": "progress", "percent": pct, "message": "Synthesizing audio…"})
 
+    def fire_text_for_tts(text: str) -> None:
+        accumulated_text = (text or "").strip()
+        while len(accumulated_text) >= TTS_MAX_CHARS:
+            boundary = _find_chunk_boundary(accumulated_text)
+            chunk_text = accumulated_text[:boundary].strip()
+            accumulated_text = accumulated_text[boundary:].strip()
+            if chunk_text:
+                fire_tts_chunk(chunk_text)
+        if accumulated_text:
+            fire_tts_chunk(accumulated_text)
+
     async def produce_script_and_tts() -> None:
         accumulated = ""
         try:
@@ -193,6 +209,51 @@ async def generate_episode_stream(
             remaining = accumulated.strip()
             if remaining:
                 fire_tts_chunk(remaining)
+
+            min_words = minimum_word_count(length, briefing_mode)
+            repair_attempts = 0
+            while count_script_words("".join(transcript_parts)) < min_words and repair_attempts < 2:
+                repair_attempts += 1
+                current_script = "".join(transcript_parts).strip()
+                missing_words = min_words - count_script_words(current_script)
+                await event_queue.put(
+                    {
+                        "type": "progress",
+                        "percent": min(82, 58 + repair_attempts * 6),
+                        "message": "Deepening coverage…",
+                    }
+                )
+                extension = await generate_script_extension(
+                    topic=topic_display,
+                    articles=articles,
+                    existing_script=current_script,
+                    missing_words=missing_words,
+                    length=length,
+                    briefing_mode=briefing_mode,
+                    category_key=(category or "").strip().lower()
+                    if briefing_mode == "category"
+                    else None,
+                )
+                if not extension or count_script_words(extension) < 80:
+                    logger.warning(
+                        "script_extension_too_short mode=%s category=%s length=%s missing_words=%d extension_words=%d",
+                        briefing_mode,
+                        category,
+                        length,
+                        missing_words,
+                        count_script_words(extension or ""),
+                    )
+                    break
+                transcript_parts.append("\n\n" + extension)
+                fire_text_for_tts(extension)
+
+            final_word_count = count_script_words("".join(transcript_parts))
+            if final_word_count < min_words:
+                raise RuntimeError(
+                    f"Generated script undershot the {min_words}-word target "
+                    f"after repair attempts ({final_word_count} words)."
+                )
+
             metrics["script_done_ms"] = int((time.perf_counter() - started_at) * 1000)
             if not tts_tasks:
                 raise RuntimeError(
@@ -242,7 +303,20 @@ async def generate_episode_stream(
     yield 85, "Finishing audio…", None
 
     transcript = "".join(transcript_parts).strip()
-    audio_parts = [audio_by_index[i] for i in sorted(audio_by_index)]
+    missing_indexes = [index for index in range(tts_chunks_started) if index not in audio_by_index]
+    if missing_indexes or tts_errors:
+        error_bits = []
+        if missing_indexes:
+            error_bits.append(f"missing chunks: {missing_indexes}")
+        if tts_errors:
+            error_bits.append(f"errors: {'; '.join(tts_errors[:3])}")
+        raise RuntimeError(
+            "TTS did not complete every audio chunk after retries. "
+            + " ".join(error_bits)
+        )
+
+    audio_parts = [audio_by_index[i] for i in range(tts_chunks_started)]
+    transcript_word_count = count_script_words(transcript)
 
     if not audio_parts:
         detail = tts_errors[0] if tts_errors else "No TTS chunks returned audio."
@@ -264,13 +338,14 @@ async def generate_episode_stream(
     response_payload = response.model_dump(mode="json")
     metrics["response_bytes"] = len(str(response_payload).encode("utf-8"))
     logger.info(
-        "episode_generation_timing mode=%s category=%s length=%s articles=%d chunks=%d "
+        "episode_generation_timing mode=%s category=%s length=%s articles=%d words=%d chunks=%d "
         "news_fetch_ms=%s first_claude_token_ms=%s script_done_ms=%s "
         "first_tts_done_ms=%s all_tts_done_ms=%s base64_ms=%s response_bytes=%s",
         briefing_mode,
         category,
         length,
         len(articles),
+        transcript_word_count,
         len(audio_parts),
         metrics["news_fetch_ms"],
         metrics["first_claude_token_ms"],
@@ -297,17 +372,51 @@ async def generate_episode(
         briefing_mode=briefing_mode,
         category_key=(category or "").strip().lower() if briefing_mode == "category" else None,
     )
-    from api.services.tts import get_chunks
+    min_words = minimum_word_count(length, briefing_mode)
+    repair_attempts = 0
+    while count_script_words(transcript) < min_words and repair_attempts < 2:
+        repair_attempts += 1
+        extension = await generate_script_extension(
+            topic=topic_display,
+            articles=articles,
+            existing_script=transcript,
+            missing_words=min_words - count_script_words(transcript),
+            length=length,
+            briefing_mode=briefing_mode,
+            category_key=(category or "").strip().lower() if briefing_mode == "category" else None,
+        )
+        if not extension or count_script_words(extension) < 80:
+            break
+        transcript = f"{transcript.strip()}\n\n{extension.strip()}"
+    if count_script_words(transcript) < min_words:
+        raise RuntimeError(
+            f"Generated script undershot the {min_words}-word target "
+            f"after repair attempts ({count_script_words(transcript)} words)."
+        )
+    from api.services.tts import get_chunks, synthesize_one_chunk_result
     chunks = get_chunks(transcript)
-    results = await asyncio.gather(*[synthesize_one_chunk(c, voice=None) for c in chunks])
-    audio_bytes = b"".join(part for part in results if part)
-    audio_chunk_urls = [bytes_to_data_url(part) for part in results if part]
+    results = await asyncio.gather(
+        *[synthesize_one_chunk_result(c, voice=None) for c in chunks]
+    )
+    failed_chunks = [
+        f"{index}: {error or 'empty audio'}"
+        for index, (part, error) in enumerate(results)
+        if error or not part
+    ]
+    if failed_chunks:
+        raise RuntimeError(
+            "TTS did not complete every audio chunk after retries. "
+            + "; ".join(failed_chunks[:3])
+        )
+    audio_parts = [part for part, _ in results]
+    audio_bytes = b"".join(audio_parts)
+    audio_chunk_urls = [bytes_to_data_url(part) for part in audio_parts]
     audio_url = bytes_to_data_url(audio_bytes)
     response = GenerateEpisodeResponse(
         audio_url=audio_url,
         transcript=transcript,
         sources=_build_sources(articles),
-        total_chunks=len([part for part in results if part]),
+        total_chunks=len(audio_parts),
         audio_chunks=audio_chunk_urls,
     )
     return response.model_dump(mode="json")

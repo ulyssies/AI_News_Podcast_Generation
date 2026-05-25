@@ -128,8 +128,10 @@ export function useAudioPlayer(
       setReady(false);
     };
     const onEnded = () => {
+      const endedAt =
+        Number.isFinite(el.duration) && el.duration > 0 ? el.duration : el.currentTime;
       setPlaying(false);
-      setCurrentTime(0);
+      setCurrentTime(endedAt);
       release(id);
       onEndedRef.current?.();
     };

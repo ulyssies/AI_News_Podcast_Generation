@@ -33,6 +33,7 @@ _OPENAI_CLIENT_LOCK = threading.Lock()
 TTS_MAX_CHARS = 800
 # Timeout per chunk; with tts-1 and ~800 chars this is ample.
 TTS_REQUEST_TIMEOUT = 90.0
+TTS_MAX_ATTEMPTS = 3
 
 
 def _client() -> Optional[OpenAI]:
@@ -112,24 +113,33 @@ async def synthesize_one_chunk_result(chunk: str, voice: Optional[str] = None) -
     """Synthesize one chunk, returning an error string instead of hiding failures."""
     voice = _normalize_voice(voice)
     loop = asyncio.get_event_loop()
-    try:
-        audio = await asyncio.wait_for(
-            loop.run_in_executor(
-                _TTS_EXECUTOR, lambda: _synthesize_one_chunk_sync(chunk, voice)
-            ),
-            timeout=TTS_REQUEST_TIMEOUT,
-        )
-        return audio, None
-    except asyncio.TimeoutError:
-        message = (
-            "TTS chunk timed out after "
-            f"{TTS_REQUEST_TIMEOUT:.0f}s (chunk length {len(chunk or '')} chars)."
-        )
-        logger.warning(message)
-        return b"", message
-    except Exception as e:
-        logger.warning("TTS chunk failed: %s", e, exc_info=True)
-        return b"", str(e) or type(e).__name__
+    last_error = ""
+    for attempt in range(1, TTS_MAX_ATTEMPTS + 1):
+        try:
+            audio = await asyncio.wait_for(
+                loop.run_in_executor(
+                    _TTS_EXECUTOR, lambda: _synthesize_one_chunk_sync(chunk, voice)
+                ),
+                timeout=TTS_REQUEST_TIMEOUT,
+            )
+            if audio:
+                return audio, None
+            last_error = "TTS chunk returned empty audio."
+        except asyncio.TimeoutError:
+            last_error = (
+                "TTS chunk timed out after "
+                f"{TTS_REQUEST_TIMEOUT:.0f}s (chunk length {len(chunk or '')} chars)."
+            )
+        except Exception as e:
+            last_error = str(e) or type(e).__name__
+            logger.warning("TTS chunk attempt %d failed: %s", attempt, e, exc_info=True)
+
+        if attempt < TTS_MAX_ATTEMPTS:
+            await asyncio.sleep(0.5 * attempt)
+
+    message = f"{last_error} Attempts: {TTS_MAX_ATTEMPTS}."
+    logger.warning(message)
+    return b"", message
 
 
 async def synthesize_one_chunk(chunk: str, voice: Optional[str] = None) -> bytes:

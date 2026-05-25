@@ -78,6 +78,7 @@ export function AudioPlayer({
   );
   const [trackIndex, setTrackIndex] = useState(0);
   const [chunkDurations, setChunkDurations] = useState<number[]>([]);
+  const [waitingForNextChunk, setWaitingForNextChunk] = useState(false);
   const resumeNextRef = useRef(false);
   const waitingForNextRef = useRef(false);
   const pendingSeekRef = useRef<number | null>(null);
@@ -95,6 +96,7 @@ export function AudioPlayer({
   useEffect(() => {
     setTrackIndex(0);
     setChunkDurations([]);
+    setWaitingForNextChunk(false);
     resumeNextRef.current = false;
     waitingForNextRef.current = false;
     pendingSeekRef.current = null;
@@ -126,6 +128,7 @@ export function AudioPlayer({
       }
       if (expectingMore) {
         waitingForNextRef.current = true;
+        setWaitingForNextChunk(true);
       }
     },
   });
@@ -185,9 +188,13 @@ export function AudioPlayer({
   const resumeAnalyser = () => {
     const setup = ensureAnalyser();
     if (!setup || setup.context.state === "closed") return;
-    setup.context.resume().catch(() => {
+    try {
+      setup.context.resume().catch(() => {
+        resetAnalyser();
+      });
+    } catch {
       resetAnalyser();
-    });
+    }
   };
 
   useEffect(() => {
@@ -293,27 +300,42 @@ export function AudioPlayer({
       return;
     }
     manuallyPausedRef.current = false;
+    if (waitingForNextChunk && expectingMore && trackIndex >= playlist.length - 1) {
+      return;
+    }
     play();
   };
 
   useEffect(() => {
     if (!autoPlayWhenReady || !currentSrc || playing) return;
     if (autoPlayAttemptedRef.current || manuallyPausedRef.current) return;
+    if (waitingForNextChunk && expectingMore && trackIndex >= playlist.length - 1) return;
     autoPlayAttemptedRef.current = true;
     window.setTimeout(() => play(), 0);
-  }, [autoPlayWhenReady, currentSrc, play, playing]);
+  }, [
+    autoPlayWhenReady,
+    currentSrc,
+    expectingMore,
+    play,
+    playing,
+    playlist.length,
+    trackIndex,
+    waitingForNextChunk,
+  ]);
 
   useEffect(() => {
     if (!waitingForNextRef.current) return;
     if (trackIndex >= playlist.length - 1) return;
     waitingForNextRef.current = false;
-    resumeNextRef.current = true;
+    setWaitingForNextChunk(false);
+    resumeNextRef.current = !manuallyPausedRef.current;
     setTrackIndex((idx) => idx + 1);
   }, [playlist.length, trackIndex]);
 
   useEffect(() => {
     if (!resumeNextRef.current || !currentSrc) return;
     resumeNextRef.current = false;
+    if (manuallyPausedRef.current) return;
     window.setTimeout(() => play(), 0);
   }, [currentSrc, play]);
 

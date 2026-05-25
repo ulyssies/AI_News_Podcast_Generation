@@ -21,13 +21,14 @@ router = APIRouter()
 _episode_cache: dict = {}
 _inflight_episode_results: dict = {}
 MAX_EPISODE_CACHE = 50
+GENERATION_CACHE_VERSION = "duration-v2"
 
 
 def _cache_key(briefing_mode: str, category: Optional[str], length: str) -> tuple:
     length_n = length.strip().lower()
     if briefing_mode == "full_daily":
-        return ("full_daily", length_n)
-    return ("category", (category or "").strip().lower(), length_n)
+        return (GENERATION_CACHE_VERSION, "full_daily", length_n)
+    return (GENERATION_CACHE_VERSION, "category", (category or "").strip().lower(), length_n)
 
 
 class GenerateRequest(BaseModel):

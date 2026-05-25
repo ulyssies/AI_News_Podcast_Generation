@@ -10,6 +10,7 @@ import asyncio
 import concurrent.futures
 import logging
 import os
+import re
 from collections import defaultdict
 from datetime import datetime
 from typing import AsyncIterator, Dict, List, Optional
@@ -47,6 +48,15 @@ Use brief, natural transitions between topic areas (e.g. "Now turning to the mar
 Do not use section headers in the script; only smooth spoken transitions.
 The first sentence must be the single most important fresh development across all sections, not a greeting or table of contents.
 """
+
+WORD_TARGETS = {
+    ("category", "short"): (600, 800),
+    ("category", "medium"): (1500, 1700),
+    ("category", "long"): (3500, 4200),
+    ("full_daily", "short"): (600, 850),
+    ("full_daily", "medium"): (1800, 2200),
+    ("full_daily", "long"): (3500, 4500),
+}
 
 
 def _select_model(length: str) -> str:
@@ -104,12 +114,21 @@ def _format_article_for_prompt(article: Dict) -> str:
     return f"**{title}** ({publisher})\nPublished: {published_at}\n{snippet}"
 
 
+def count_script_words(script: str) -> int:
+    return len(re.findall(r"\b[\w'-]+\b", script or ""))
+
+
+def minimum_word_count(length: str, briefing_mode: str) -> int:
+    return WORD_TARGETS.get((briefing_mode, length), WORD_TARGETS[("category", "short")])[0]
+
+
 def _length_guide(length: str, briefing_mode: str) -> str:
     if length == "medium" and briefing_mode == "category":
         return (
-            "LENGTH: Write 1,200-1,400 words (about 8-10 minutes when read aloud). "
+            "LENGTH: Write 1,500-1,700 words (about 9-11 minutes when read aloud). "
             "This is the MEDIUM category format: substantive, focused, and efficient. "
-            "Use the extra time for confirmed facts, implications, and concise context only."
+            "Do not stop at a short summary; use the extra time for confirmed facts, "
+            "implications, and concise context only."
         )
     return {
         "short": (
@@ -165,6 +184,11 @@ def _build_prompt(
         if briefing_mode == "full_daily"
         else "This is a single-subject/category briefing. Start with the strongest fresh development in this topic."
     )
+    freshness_gap_instruction = (
+        "- If a full-daily section has no fresh article, say so briefly and move on; do not stretch stale material into that section.\n"
+        if briefing_mode == "full_daily"
+        else "- If fresh material is thin, lead with the freshest confirmed item, then use older supplied stories as clearly labeled context to meet the length target. Do not end early just because some stories are contextual.\n"
+    )
 
     prompt = f"""You are writing today's audio news briefing. Topic: {topic}
 Today is {_today_label()}.
@@ -177,10 +201,10 @@ Editorial priority:
 - Lead with the freshest, highest-impact reporting from the last 24-48 hours.
 - Use older stories only when they explain why the fresh story matters. Label older material naturally, e.g. "For context..." or "Earlier this month...".
 - Treat sources with unknown publication dates cautiously; do not lead with them unless the title or snippet clearly indicates a current breaking development.
-- If a section has no fresh article, say so briefly and move on; do not stretch stale material into a lead story.
+{freshness_gap_instruction.rstrip()}
 - Rank by public importance and recency, not by the order articles appear in the source list.
 - Do not invent details not present in the sources.
-- Do not apologize for source gaps or say "details were not fully available"; simply state what is confirmed.
+- Do not narrate source limitations, word counts, or production constraints. Simply state what is confirmed.
 
 Audio style:
 - First sentence must be a direct news lead. Do not greet the listener.
@@ -193,9 +217,52 @@ Audio style:
 CRITICAL: Meet the word-count target through reporting depth, not filler. Output only the spoken script; no headings, stage directions, or markdown."""
 
     if length == "medium" and briefing_mode == "category":
-        max_tokens = 2600
+        max_tokens = 3400
     else:
         max_tokens = {"short": 1200, "medium": 3500, "long": 6500}.get(length, 1200)
+    return prompt, max_tokens
+
+
+def _build_extension_prompt(
+    topic: str,
+    articles: List[Dict],
+    length: str,
+    briefing_mode: str,
+    category_key: Optional[str],
+    existing_script: str,
+    missing_words: int,
+) -> tuple[str, int]:
+    if briefing_mode == "full_daily":
+        article_content = _articles_grouped_by_section(articles)
+    else:
+        article_content = "\n\n".join(_format_article_for_prompt(a) for a in articles[:14])
+
+    target_extra = max(350, missing_words + 120)
+    politics_note = ""
+    if category_key == "politics":
+        politics_note = (
+            "\nPOLITICS SEGMENT: Present competing viewpoints and official positions "
+            "without favoring any side. Attribute factual claims to their sources.\n"
+        )
+
+    prompt = f"""The current audio briefing for {topic} is too short.
+Today is {_today_label()}.
+
+Existing script:
+{existing_script}
+
+Source articles:
+{article_content}
+{politics_note}
+Write a continuation that adds about {target_extra} words.
+Rules:
+- Continue naturally from the existing script. Do not restart the episode.
+- Do not repeat facts already covered unless adding a new implication or useful context.
+- Lead any added section with the strongest unused fresh item. If fresh material is thin, use older supplied stories as clearly labeled context.
+- Do not invent facts, sources, quotes, dates, or outcomes.
+- No greetings, no sign-off, no recap for its own sake.
+- Output only the spoken continuation text."""
+    max_tokens = min(2400, max(900, int(target_extra * 1.7)))
     return prompt, max_tokens
 
 
@@ -343,3 +410,34 @@ async def generate_podcast_script(
         lambda: _generate_script_sync(topic, articles, length, briefing_mode, category_key),
     )
     return script.strip()
+
+
+async def generate_script_extension(
+    topic: str,
+    articles: List[Dict],
+    existing_script: str,
+    missing_words: int,
+    length: str = "short",
+    *,
+    briefing_mode: str = "category",
+    category_key: Optional[str] = None,
+) -> str:
+    """Generate additional spoken script when the first pass undershoots the target."""
+    if not articles or missing_words <= 0:
+        return ""
+
+    prompt, max_tokens = _build_extension_prompt(
+        topic,
+        articles,
+        length,
+        briefing_mode,
+        category_key,
+        existing_script,
+        missing_words,
+    )
+    loop = asyncio.get_event_loop()
+    extension = await loop.run_in_executor(
+        _SCRIPT_EXECUTOR,
+        lambda: _complete_user_prompt(prompt, max_tokens, length),
+    )
+    return (extension or "").strip()

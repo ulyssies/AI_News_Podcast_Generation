@@ -30,7 +30,7 @@ const FETCH_TIMEOUT_MS = 10 * 60 * 1000;
 const RESTING_AUDIO_LEVELS = [0.26, 0.5, 0.64, 0.36, 0.22, 0.19, 0.14];
 
 function estimateEpisodeDurationSeconds(mode: BriefingMode, length: string): number {
-  if (mode === "category" && length === "medium") return 9 * 60;
+  if (mode === "category" && length === "medium") return 10 * 60;
   if (length === "long") return 28 * 60;
   if (length === "medium") return 14 * 60;
   return 4.5 * 60;
@@ -196,6 +196,9 @@ export default function Home() {
               };
               if (data.error) {
                 setError(data.error);
+                setAudioChunks([]);
+                setExpectedChunkCount(null);
+                setAutoPlayGenerationAudio(false);
                 setLoading(false);
                 setLoadingCategory(null);
                 return;
