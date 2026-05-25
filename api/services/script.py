@@ -11,6 +11,7 @@ import concurrent.futures
 import logging
 import os
 from collections import defaultdict
+from datetime import datetime
 from typing import AsyncIterator, Dict, List, Optional
 
 _SCRIPT_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
@@ -35,6 +36,8 @@ Rules:
 - Do not favor any political party, ideology, or outlet. Present facts; attribute claims to sources when relevant.
 - No hype, no clickbait phrasing. Plain, clear English for listeners.
 - For politics: cover multiple perspectives fairly when stories are contested; do not imply one side is right.
+- Lead with news, not ceremony. Never open with "Good morning", "welcome", "I'm glad you're with us", or a preview of the whole show.
+- Prioritize the freshest, highest-impact developments from the last 24-48 hours. Older items are context only and must be labeled that way in natural spoken language.
 """
 
 FULL_DAILY_DRAFT_ADDENDUM = """
@@ -42,6 +45,7 @@ This is the FULL DAILY BRIEFING covering multiple news sections in order.
 Write one continuous script that flows like a professional radio newscast.
 Use brief, natural transitions between topic areas (e.g. "Now turning to the markets—", "In science and research today—", "On the technology front—").
 Do not use section headers in the script; only smooth spoken transitions.
+The first sentence must be the single most important fresh development across all sections, not a greeting or table of contents.
 """
 
 
@@ -78,20 +82,57 @@ def _articles_grouped_by_section(articles: List[Dict]) -> str:
     for label in order_labels:
         if label not in by_label:
             continue
-        block = "\n\n".join(
-            f"**{x.get('title', '')}** ({x.get('publisher', '')})\n{x.get('snippet', '')}"
-            for x in by_label[label][:8]
-        )
+        block = "\n\n".join(_format_article_for_prompt(x) for x in by_label[label][:8])
         parts.append(f"### {label}\n{block}")
     for label, lst in by_label.items():
         if label in order_labels:
             continue
-        block = "\n\n".join(
-            f"**{x.get('title', '')}** ({x.get('publisher', '')})\n{x.get('snippet', '')}"
-            for x in lst[:6]
-        )
+        block = "\n\n".join(_format_article_for_prompt(x) for x in lst[:6])
         parts.append(f"### {label}\n{block}")
     return "\n\n".join(parts)
+
+
+def _today_label() -> str:
+    return datetime.now().strftime("%A, %B %d, %Y").replace(" 0", " ")
+
+
+def _format_article_for_prompt(article: Dict) -> str:
+    publisher = article.get("publisher") or "Unknown publisher"
+    published_at = article.get("published_at") or "unknown"
+    title = article.get("title") or "Untitled"
+    snippet = article.get("snippet") or ""
+    return f"**{title}** ({publisher})\nPublished: {published_at}\n{snippet}"
+
+
+def _length_guide(length: str, briefing_mode: str) -> str:
+    if length == "medium" and briefing_mode == "category":
+        return (
+            "LENGTH: Write 1,200-1,400 words (about 8-10 minutes when read aloud). "
+            "This is the MEDIUM category format: substantive, focused, and efficient. "
+            "Use the extra time for confirmed facts, implications, and concise context only."
+        )
+    return {
+        "short": (
+            "LENGTH: Write at least 600 words (about 4-5 minutes when read aloud). "
+            "This is the SHORT format: lead fast, cover only the highest-value developments, "
+            "and skip recap/sign-off padding."
+        ),
+        "medium": (
+            "LENGTH: Write at least 1,800 words (about 12-15 minutes when read aloud). "
+            "This is the MEDIUM format: add depth through verified detail and useful context, "
+            "not broad previews, filler transitions, or long conclusions."
+        ),
+        "long": (
+            "LENGTH: Write at least 3,500 words (about 25-30 minutes when read aloud). "
+            "This is the LONG format: a full briefing with meaningful depth in each section. "
+            "Use the length for prioritization, context, and consequences; do not pad with greetings, "
+            "show previews, generic wrap-ups, or repeated source disclaimers."
+        ),
+    }.get(
+        length,
+        "LENGTH: Write at least 600 words (about 4-5 minutes when read aloud). "
+        "Lead fast and avoid filler.",
+    )
 
 
 def _build_prompt(
@@ -105,25 +146,9 @@ def _build_prompt(
     if briefing_mode == "full_daily":
         article_content = _articles_grouped_by_section(articles)
     else:
-        article_content = "\n\n".join(
-            f"**{a.get('title', 'Untitled')}** ({a.get('publisher', '')})\n{a.get('snippet', '')}"
-            for a in articles[:14]
-        )
+        article_content = "\n\n".join(_format_article_for_prompt(a) for a in articles[:14])
 
-    length_guide = {
-        "short": (
-            "LENGTH: Write at least 600 words (about 4–5 minutes when read aloud). "
-            "This is the SHORT format—be substantive but concise."
-        ),
-        "medium": (
-            "LENGTH: Write at least 1,800 words (about 12–15 minutes when read aloud). "
-            "This is the MEDIUM format—significantly longer than short."
-        ),
-        "long": (
-            "LENGTH: Write at least 3,500 words (about 25–30 minutes when read aloud). "
-            "This is the LONG format—a full deep-dive."
-        ),
-    }.get(length, "LENGTH: Write at least 600 words (about 4–5 minutes when read aloud).")
+    length_guide = _length_guide(length, briefing_mode)
 
     politics_note = ""
     if category_key == "politics":
@@ -134,21 +159,43 @@ def _build_prompt(
 
     full_note = FULL_DAILY_DRAFT_ADDENDUM if briefing_mode == "full_daily" else ""
 
+    mode_instruction = (
+        "This is a full daily briefing across sections. Start with the strongest fresh story "
+        "from any section, then move through the remaining sections in a logical order."
+        if briefing_mode == "full_daily"
+        else "This is a single-subject/category briefing. Start with the strongest fresh development in this topic."
+    )
+
     prompt = f"""You are writing today's audio news briefing. Topic: {topic}
+Today is {_today_label()}.
 
 Source articles:
 {article_content}
 {politics_note}{full_note}
-Structure:
-- Brief introduction (what listeners will hear)
-- Main developments (facts only)
-- Context only where it helps understanding
-- Short sign-off
+Editorial priority:
+- {mode_instruction}
+- Lead with the freshest, highest-impact reporting from the last 24-48 hours.
+- Use older stories only when they explain why the fresh story matters. Label older material naturally, e.g. "For context..." or "Earlier this month...".
+- Treat sources with unknown publication dates cautiously; do not lead with them unless the title or snippet clearly indicates a current breaking development.
+- If a section has no fresh article, say so briefly and move on; do not stretch stale material into a lead story.
+- Rank by public importance and recency, not by the order articles appear in the source list.
+- Do not invent details not present in the sources.
+- Do not apologize for source gaps or say "details were not fully available"; simply state what is confirmed.
+
+Audio style:
+- First sentence must be a direct news lead. Do not greet the listener.
+- Banned openings: "Good morning", "Welcome", "I'm glad you're with us", "Over the next...", "We have a lot to cover", "Let's get started".
+- Banned endings: "That does it", "Thank you for spending this time", "Stay informed", "Take care".
+- No table-of-contents opening. No generic recap ending. End after the final useful fact or forward-looking watch item.
+- Use short spoken paragraphs, clean transitions, and direct attribution where needed.
 
 {length_guide}
-CRITICAL: Meet the minimum word count. Output only the spoken script—no headings, stage directions, or markdown."""
+CRITICAL: Meet the word-count target through reporting depth, not filler. Output only the spoken script; no headings, stage directions, or markdown."""
 
-    max_tokens = {"short": 1200, "medium": 3500, "long": 6500}.get(length, 1200)
+    if length == "medium" and briefing_mode == "category":
+        max_tokens = 2600
+    else:
+        max_tokens = {"short": 1200, "medium": 3500, "long": 6500}.get(length, 1200)
     return prompt, max_tokens
 
 
@@ -221,7 +268,7 @@ def _generate_script_sync(
     if result:
         return result
     return (
-        f"Today's briefing on {topic}. Here's a summary of the latest coverage. "
+        f"Latest confirmed coverage on {topic}: "
         + "\n".join(f"- {a.get('title', '')}: {a.get('snippet', '')}" for a in articles[:10])
     )
 
@@ -239,10 +286,7 @@ async def stream_podcast_script(
     Falls back to a single yielded response if streaming is unavailable.
     """
     if not articles:
-        yield (
-            f"Today's briefing on {topic}. "
-            "We couldn't find enough recent coverage. Try again later."
-        )
+        yield f"No recent coverage was found for {topic}. Try again later."
         return
 
     api_key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
@@ -291,10 +335,7 @@ async def generate_podcast_script(
     category_key: Optional[str] = None,
 ) -> str:
     if not articles:
-        return (
-            f"Today's briefing on {topic}. "
-            "We couldn't find enough recent coverage. Try again later."
-        )
+        return f"No recent coverage was found for {topic}. Try again later."
 
     loop = asyncio.get_event_loop()
     script = await loop.run_in_executor(

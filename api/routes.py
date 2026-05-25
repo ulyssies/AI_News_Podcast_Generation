@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import traceback
@@ -18,6 +19,7 @@ limiter = Limiter(key_func=get_remote_address)
 router = APIRouter()
 
 _episode_cache: dict = {}
+_inflight_episode_results: dict = {}
 MAX_EPISODE_CACHE = 50
 
 
@@ -53,12 +55,18 @@ async def generate_endpoint(request: Request, payload: GenerateRequest):
     key = _cache_key(payload.briefing_mode, payload.category, payload.length)
     if key in _episode_cache:
         return _episode_cache[key]
+    if key in _inflight_episode_results:
+        return await _inflight_episode_results[key]
     try:
-        result = await generate_episode(
-            length=payload.length,
-            briefing_mode=payload.briefing_mode,
-            category=payload.category,
+        task = asyncio.create_task(
+            generate_episode(
+                length=payload.length,
+                briefing_mode=payload.briefing_mode,
+                category=payload.category,
+            )
         )
+        _inflight_episode_results[key] = task
+        result = await task
         while len(_episode_cache) >= MAX_EPISODE_CACHE:
             _episode_cache.pop(next(iter(_episode_cache)))
         _episode_cache[key] = result
@@ -67,6 +75,8 @@ async def generate_endpoint(request: Request, payload: GenerateRequest):
         logger.exception("Generate episode failed")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"{type(e).__name__}: {str(e)}")
+    finally:
+        _inflight_episode_results.pop(key, None)
 
 
 @router.post("/generate/stream")
@@ -83,7 +93,28 @@ async def generate_stream_endpoint(payload: GenerateRequest):
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
+    if key in _inflight_episode_results:
+
+        async def inflight_stream():
+            yield f"data: {json.dumps({'percent': 1, 'message': 'Joining existing generation…'})}\n\n"
+            try:
+                result = await _inflight_episode_results[key]
+                yield f"data: {json.dumps({'percent': 100, 'result': result})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
+        return StreamingResponse(
+            inflight_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
+    loop = asyncio.get_running_loop()
+    result_future = loop.create_future()
+    _inflight_episode_results[key] = result_future
+
     async def event_stream():
+        sent_audio_chunks = False
         # Flush a 1% event immediately so any buffering proxy releases the connection.
         # Without this, the first real event (10%) may be held in nginx's buffer for
         # 20-30 s until enough bytes accumulate to trigger an automatic flush.
@@ -95,15 +126,30 @@ async def generate_stream_endpoint(payload: GenerateRequest):
                 category=payload.category,
             ):
                 if result is not None:
-                    while len(_episode_cache) >= MAX_EPISODE_CACHE:
-                        _episode_cache.pop(next(iter(_episode_cache)))
-                    _episode_cache[key] = result
-                    yield f"data: {json.dumps({'percent': percent, 'result': result})}\n\n"
+                    if result.get("event") == "audio_chunk":
+                        sent_audio_chunks = True
+                        yield f"data: {json.dumps({'percent': percent, 'message': message, 'audio_chunk': result})}\n\n"
+                    else:
+                        while len(_episode_cache) >= MAX_EPISODE_CACHE:
+                            _episode_cache.pop(next(iter(_episode_cache)))
+                        _episode_cache[key] = result
+                        if not result_future.done():
+                            result_future.set_result(result)
+                        result_for_client = dict(result)
+                        if sent_audio_chunks:
+                            # Live clients already received playable chunks; don't send the
+                            # full base64 MP3 again in the final metadata event.
+                            result_for_client["audio_url"] = ""
+                        yield f"data: {json.dumps({'percent': percent, 'result': result_for_client})}\n\n"
                 else:
                     yield f"data: {json.dumps({'percent': percent, 'message': message})}\n\n"
         except Exception as e:
             logger.exception("Generate stream failed")
+            if not result_future.done():
+                result_future.set_exception(e)
             yield f"data: {json.dumps({'error': str(e)})}\n\n"
+        finally:
+            _inflight_episode_results.pop(key, None)
 
     return StreamingResponse(
         event_stream(),

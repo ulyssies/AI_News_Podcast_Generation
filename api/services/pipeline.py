@@ -8,6 +8,7 @@ TTS chunks fire as Claude streams text, so audio synthesis overlaps with generat
 
 import asyncio
 import logging
+import time
 from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from api.models import GenerateEpisodeResponse, EpisodeSource
@@ -98,67 +99,140 @@ async def generate_episode_stream(
     Pipelines Claude streaming + TTS: audio chunks fire as Claude generates text,
     so synthesis overlaps with generation rather than happening after.
     """
+    started_at = time.perf_counter()
+    metrics: Dict[str, Optional[int]] = {
+        "news_fetch_ms": None,
+        "first_claude_token_ms": None,
+        "script_done_ms": None,
+        "first_tts_done_ms": None,
+        "all_tts_done_ms": None,
+        "base64_ms": None,
+        "response_bytes": None,
+    }
+
     yield 10, "Fetching news…", None
     articles, topic_display = await _gather_articles(briefing_mode, category, length)
+    metrics["news_fetch_ms"] = int((time.perf_counter() - started_at) * 1000)
     yield 18, "Generating script…", None
 
-    tts_tasks: List[asyncio.Task] = []
-    accumulated = ""
     transcript_parts: List[str] = []
-    n_chunks_fired = 0
+    event_queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
+    tts_tasks: List[asyncio.Task] = []
+    audio_by_index: Dict[int, bytes] = {}
+    tts_chunks_started = 0
 
-    async for text_delta in stream_podcast_script(
-        topic=topic_display,
-        articles=articles,
-        length=length,
-        briefing_mode=briefing_mode,
-        category_key=(category or "").strip().lower() if briefing_mode == "category" else None,
-    ):
-        accumulated += text_delta
-        transcript_parts.append(text_delta)
-
-        # Fire a TTS task as soon as we have a full chunk ready
-        while len(accumulated) >= TTS_MAX_CHARS:
-            boundary = _find_chunk_boundary(accumulated)
-            chunk_text = accumulated[:boundary].strip()
-            accumulated = accumulated[boundary:]
-            if chunk_text:
-                task = asyncio.create_task(synthesize_one_chunk(chunk_text))
-                tts_tasks.append(task)
-                n_chunks_fired += 1
-                # Progress 18–70% during the script+TTS pipeline phase
-                pct = min(70, 18 + n_chunks_fired * 7)
-                yield pct, "Synthesizing audio…", None
-
-    # Fire TTS for any remaining text after Claude finishes
-    remaining = accumulated.strip()
-    if remaining:
-        task = asyncio.create_task(synthesize_one_chunk(remaining))
+    def fire_tts_chunk(chunk_text: str) -> None:
+        nonlocal tts_chunks_started
+        index = tts_chunks_started
+        tts_chunks_started += 1
+        task = asyncio.create_task(synthesize_one_chunk(chunk_text))
         tts_tasks.append(task)
 
-    if not tts_tasks:
-        raise RuntimeError(
-            "No audio was generated — the script may have been empty. "
-            "Check your API keys and news sources."
-        )
+        def on_done(done_task: asyncio.Task, chunk_index: int = index) -> None:
+            try:
+                part = done_task.result()
+            except Exception as exc:
+                logger.warning("TTS chunk %d failed: %s", chunk_index, exc, exc_info=True)
+                part = b""
+            event_queue.put_nowait(
+                {
+                    "type": "audio_chunk",
+                    "index": chunk_index,
+                    "audio": part,
+                    "chars": len(chunk_text),
+                }
+            )
 
-    yield 75, "Finishing audio…", None
+        task.add_done_callback(on_done)
+        pct = min(72, 20 + tts_chunks_started * 5)
+        event_queue.put_nowait({"type": "progress", "percent": pct, "message": "Synthesizing audio…"})
+
+    async def produce_script_and_tts() -> None:
+        accumulated = ""
+        try:
+            async for text_delta in stream_podcast_script(
+                topic=topic_display,
+                articles=articles,
+                length=length,
+                briefing_mode=briefing_mode,
+                category_key=(category or "").strip().lower()
+                if briefing_mode == "category"
+                else None,
+            ):
+                if text_delta and metrics["first_claude_token_ms"] is None:
+                    metrics["first_claude_token_ms"] = int(
+                        (time.perf_counter() - started_at) * 1000
+                    )
+                accumulated += text_delta
+                transcript_parts.append(text_delta)
+
+                # Fire TTS as soon as a sentence-safe chunk is ready.
+                while len(accumulated) >= TTS_MAX_CHARS:
+                    boundary = _find_chunk_boundary(accumulated)
+                    chunk_text = accumulated[:boundary].strip()
+                    accumulated = accumulated[boundary:]
+                    if chunk_text:
+                        fire_tts_chunk(chunk_text)
+
+            remaining = accumulated.strip()
+            if remaining:
+                fire_tts_chunk(remaining)
+            metrics["script_done_ms"] = int((time.perf_counter() - started_at) * 1000)
+            if not tts_tasks:
+                raise RuntimeError(
+                    "No audio was generated — the script may have been empty. "
+                    "Check your API keys and news sources."
+                )
+            await asyncio.gather(*tts_tasks, return_exceptions=True)
+            metrics["all_tts_done_ms"] = int((time.perf_counter() - started_at) * 1000)
+            await event_queue.put({"type": "producer_done"})
+        except Exception as exc:
+            await event_queue.put({"type": "error", "error": exc})
+
+    producer_task = asyncio.create_task(produce_script_and_tts())
+
+    while True:
+        event = await event_queue.get()
+        kind = event.get("type")
+        if kind == "progress":
+            yield int(event["percent"]), str(event["message"]), None
+        elif kind == "audio_chunk":
+            index = int(event["index"])
+            part = event.get("audio") or b""
+            if part:
+                audio_by_index[index] = part
+                if metrics["first_tts_done_ms"] is None:
+                    metrics["first_tts_done_ms"] = int(
+                        (time.perf_counter() - started_at) * 1000
+                    )
+                pct = min(84, 30 + len(audio_by_index) * 5)
+                yield pct, "Audio ready…", {
+                    "event": "audio_chunk",
+                    "index": index,
+                    "audio_url": bytes_to_data_url(part),
+                    "chars": int(event.get("chars") or 0),
+                }
+        elif kind == "producer_done":
+            break
+        elif kind == "error":
+            raise event["error"]
+
+    await producer_task
+
+    yield 85, "Finishing audio…", None
 
     transcript = "".join(transcript_parts).strip()
-
-    # Collect TTS results in order (tasks may already be done)
-    audio_parts: List[bytes] = []
-    for task in tts_tasks:
-        part = await task
-        if part:
-            audio_parts.append(part)
+    audio_parts = [audio_by_index[i] for i in sorted(audio_by_index)]
 
     if not audio_parts:
         raise RuntimeError(
             "TTS produced no audio. Check your OPENAI_API_KEY and TTS configuration."
         )
 
-    audio_url = bytes_to_data_url(b"".join(audio_parts))
+    audio_bytes = b"".join(audio_parts)
+    base64_started = time.perf_counter()
+    audio_url = bytes_to_data_url(audio_bytes)
+    metrics["base64_ms"] = int((time.perf_counter() - base64_started) * 1000)
     yield 90, "Finalizing…", None
 
     response = GenerateEpisodeResponse(
@@ -166,7 +240,26 @@ async def generate_episode_stream(
         transcript=transcript,
         sources=_build_sources(articles),
     )
-    yield 100, "Done", response.model_dump(mode="json")
+    response_payload = response.model_dump(mode="json")
+    metrics["response_bytes"] = len(str(response_payload).encode("utf-8"))
+    logger.info(
+        "episode_generation_timing mode=%s category=%s length=%s articles=%d chunks=%d "
+        "news_fetch_ms=%s first_claude_token_ms=%s script_done_ms=%s "
+        "first_tts_done_ms=%s all_tts_done_ms=%s base64_ms=%s response_bytes=%s",
+        briefing_mode,
+        category,
+        length,
+        len(articles),
+        len(audio_parts),
+        metrics["news_fetch_ms"],
+        metrics["first_claude_token_ms"],
+        metrics["script_done_ms"],
+        metrics["first_tts_done_ms"],
+        metrics["all_tts_done_ms"],
+        metrics["base64_ms"],
+        metrics["response_bytes"],
+    )
+    yield 100, "Done", response_payload
 
 
 async def generate_episode(

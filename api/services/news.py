@@ -6,11 +6,16 @@ Fetches recent news via Google News RSS (no key) or NewsAPI (NEWS_API_KEY).
 Supports curated category queries and a balanced politics mix (when NewsAPI available).
 """
 
+import asyncio
+import logging
 import re
+from email.utils import parsedate_to_datetime
 from typing import Dict, List, Optional, Set
 from urllib.parse import quote_plus
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 NEWS_API_KEY: Optional[str] = None
 
@@ -114,12 +119,26 @@ async def fetch_full_daily_briefing_articles(max_total: int) -> List[Dict]:
     seen_urls: Set[str] = set()
     out: List[Dict] = []
 
-    for section_key in FULL_BRIEFING_SECTION_ORDER:
+    async def fetch_section(section_key: str) -> tuple[str, List[Dict]]:
         if section_key == "politics":
-            batch = await _fetch_politics_balanced(per)
-        else:
-            query = CATEGORY_SEARCH_QUERIES.get(section_key, "news")
-            batch = await fetch_news(query, max_articles=per)
+            return section_key, await _fetch_politics_balanced(per)
+        query = CATEGORY_SEARCH_QUERIES.get(section_key, "news")
+        return section_key, await fetch_news(query, max_articles=per)
+
+    section_results = await asyncio.gather(
+        *(fetch_section(section_key) for section_key in FULL_BRIEFING_SECTION_ORDER),
+        return_exceptions=True,
+    )
+
+    for result in section_results:
+        if isinstance(result, Exception):
+            logger.warning(
+                "Full daily section fetch failed: %s",
+                result,
+                exc_info=(type(result), result, result.__traceback__),
+            )
+            continue
+        section_key, batch = result
         label = SECTION_DISPLAY_NAMES.get(section_key, section_key)
         for a in batch:
             url = (a.get("url") or "").strip()
@@ -142,24 +161,28 @@ async def _fetch_politics_balanced(max_articles: int) -> List[Dict]:
     q = CATEGORY_SEARCH_QUERIES["politics"]
     if key:
         try:
-            left = await _fetch_news_api_domains(
-                q, "cnn.com,msnbc.com,theguardian.com", key, half
-            )
-            right = await _fetch_news_api_domains(
-                q, "foxnews.com,nypost.com,washingtonexaminer.com", key, half
+            left_result, right_result = await asyncio.gather(
+                _fetch_news_api_domains(
+                    q, "cnn.com,msnbc.com,theguardian.com", key, half
+                ),
+                _fetch_news_api_domains(
+                    q, "foxnews.com,nypost.com,washingtonexaminer.com", key, half
+                ),
             )
             merged: List[Dict] = []
-            for a in left:
+            for a in left_result:
                 merged.append(a)
-            for a in right:
+            for a in right_result:
                 if a.get("url") and a["url"] not in {x.get("url") for x in merged}:
                     merged.append(a)
             return merged[:max_articles]
         except Exception:
             pass
     # RSS fallback: two query flavors
-    a = await _fetch_google_news_rss(f"{q} CNN OR Reuters", half + 1)
-    b = await _fetch_google_news_rss(f"{q} Fox News OR Wall Street Journal", half + 1)
+    a, b = await asyncio.gather(
+        _fetch_google_news_rss(f"{q} CNN OR Reuters", half + 1),
+        _fetch_google_news_rss(f"{q} Fox News OR Wall Street Journal", half + 1),
+    )
     merged = []
     urls: Set[str] = set()
     for lst in (a, b):
@@ -194,6 +217,7 @@ async def _fetch_news_api_domains(
         {
             "title": a.get("title") or "Untitled",
             "url": a.get("url") or "",
+            "published_at": a.get("publishedAt"),
             "publisher": a.get("source", {}).get("name")
             if isinstance(a.get("source"), dict)
             else None,
@@ -225,6 +249,7 @@ async def _fetch_google_news_rss(topic: str, max_articles: int) -> List[Dict]:
         link_el = item.find("link")
         source_el = item.find("source")
         desc_el = item.find("description")
+        pub_date_el = item.find("pubDate")
 
         title = (title_el.text or "").strip() if title_el is not None else ""
         link = (link_el.text or "").strip() if link_el is not None else ""
@@ -234,12 +259,19 @@ async def _fetch_google_news_rss(topic: str, max_articles: int) -> List[Dict]:
         snippet = None
         if desc_el is not None and desc_el.text:
             snippet = re.sub(r"<[^>]+>", "", desc_el.text).strip()[:500]
+        published_at = None
+        if pub_date_el is not None and pub_date_el.text:
+            try:
+                published_at = parsedate_to_datetime(pub_date_el.text.strip()).isoformat()
+            except (TypeError, ValueError):
+                published_at = pub_date_el.text.strip()
 
         if not link:
             continue
         items.append({
             "title": title or "Untitled",
             "url": link,
+            "published_at": published_at,
             "publisher": publisher,
             "snippet": snippet or title,
         })
@@ -265,6 +297,7 @@ async def _fetch_news_api(topic: str, api_key: str, max_articles: int) -> List[D
         {
             "title": a.get("title") or "Untitled",
             "url": a.get("url") or "",
+            "published_at": a.get("publishedAt"),
             "publisher": a.get("source", {}).get("name")
             if isinstance(a.get("source"), dict)
             else None,

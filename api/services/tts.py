@@ -2,9 +2,9 @@
 tts.py
 ------
 
-Converts a podcast script into spoken audio using OpenAI TTS.
-Chunks long scripts to stay under the API limit (~4096 chars), then concatenates
-the audio. Returns a data URL (base64) so the frontend can play it without file storage.
+Converts podcast script text into spoken audio using OpenAI TTS.
+The streaming pipeline requests chunks as they become available; legacy/cache paths
+can still concatenate chunks into a single data URL for playback without file storage.
 """
 
 import asyncio
@@ -12,6 +12,7 @@ import base64
 import concurrent.futures
 import logging
 import os
+import threading
 from typing import List, Optional
 
 # Dedicated pool so concurrent TTS requests don't compete with other thread work.
@@ -23,18 +24,27 @@ _TTS_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
+_OPENAI_CLIENT: Optional[OpenAI] = None
+_OPENAI_CLIENT_KEY: Optional[str] = None
+_OPENAI_CLIENT_LOCK = threading.Lock()
 
-# OpenAI TTS input limit is 4096. Smaller chunks = faster per request (~30–60s each).
-TTS_MAX_CHARS = 1200
-# Timeout per chunk; with tts-1 and ~1200 chars this is ample
+# OpenAI TTS input limit is 4096. Smaller chunks start earlier while Claude streams,
+# so audio synthesis overlaps with generation instead of waiting for the full script.
+TTS_MAX_CHARS = 800
+# Timeout per chunk; with tts-1 and ~800 chars this is ample.
 TTS_REQUEST_TIMEOUT = 90.0
 
 
 def _client() -> Optional[OpenAI]:
+    global _OPENAI_CLIENT, _OPENAI_CLIENT_KEY
     key = (os.environ.get("OPENAI_API_KEY") or "").strip()
     if not key:
         return None
-    return OpenAI(api_key=key, timeout=TTS_REQUEST_TIMEOUT)
+    with _OPENAI_CLIENT_LOCK:
+        if _OPENAI_CLIENT is None or _OPENAI_CLIENT_KEY != key:
+            _OPENAI_CLIENT = OpenAI(api_key=key, timeout=TTS_REQUEST_TIMEOUT)
+            _OPENAI_CLIENT_KEY = key
+        return _OPENAI_CLIENT
 
 
 def _chunk_script(script: str, max_chars: int = TTS_MAX_CHARS) -> List[str]:
@@ -48,13 +58,17 @@ def _chunk_script(script: str, max_chars: int = TTS_MAX_CHARS) -> List[str]:
             chunks.append(rest)
             break
         segment = rest[:max_chars]
-        last_space = segment.rfind(" ")
-        if last_space > max_chars // 2:
-            chunk = segment[:last_space].strip()
-            rest = rest[last_space:].strip()
-        else:
-            chunk = segment
-            rest = rest[max_chars:].strip()
+        split_at = -1
+        for sep in (". ", "! ", "? ", ".\n", "!\n", "?\n"):
+            idx = segment.rfind(sep)
+            if idx > max_chars // 2:
+                split_at = idx + len(sep)
+                break
+        if split_at == -1:
+            last_space = segment.rfind(" ")
+            split_at = last_space if last_space > max_chars // 2 else max_chars
+        chunk = rest[:split_at].strip()
+        rest = rest[split_at:].strip()
         if chunk:
             chunks.append(chunk)
     return chunks
@@ -66,7 +80,7 @@ def _synthesize_one_chunk_sync(text: str, voice: str) -> bytes:
     if not client or not (text or "").strip():
         return b""
     try:
-        # tts-1 is fast (~30–60s per chunk); tts-1-hd is higher quality but 3–5x slower
+        # tts-1 keeps the demo path low-latency; hd variants are noticeably slower.
         model = (os.environ.get("OPENAI_TTS_MODEL") or "tts-1").strip() or "tts-1"
         resp = client.audio.speech.create(
             model=model,
